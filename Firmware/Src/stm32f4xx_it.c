@@ -41,6 +41,7 @@
 #include "low_level.h"
 
 typedef void (*ADC_handler_t)(ADC_HandleTypeDef* hadc, bool injected);
+void ADC1_callback_dispatch(ADC_HandleTypeDef* hadc, bool injected);
 void ADC_IRQ_Dispatch(ADC_HandleTypeDef* hadc, ADC_handler_t callback);
 
 #if HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 1 \
@@ -213,7 +214,7 @@ void ADC_IRQHandler(void)
 
   // The HAL's ADC handling mechanism adds many clock cycles of overhead
   // So we bypass it and handle the logic ourselves.
-  ADC_IRQ_Dispatch(&hadc1, &vbus_sense_adc_cb);
+  ADC_IRQ_Dispatch(&hadc1, &ADC1_callback_dispatch);
   ADC_IRQ_Dispatch(&hadc2, &pwm_trig_adc_cb);
   ADC_IRQ_Dispatch(&hadc3, &pwm_trig_adc_cb);
 
@@ -281,6 +282,14 @@ void OTG_FS_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 #endif
+
+void ADC1_callback_dispatch(ADC_HandleTypeDef* hadc, bool injected) {
+  if (injected) {
+    vbus_sense_adc_cb(hadc, true);
+  } else {
+    HAL_ADC_IRQHandler(hadc);
+  }
+}
 
 void ADC_IRQ_Dispatch(ADC_HandleTypeDef* hadc, ADC_handler_t callback) {
 
