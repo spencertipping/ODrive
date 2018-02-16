@@ -53,6 +53,7 @@
 #include "freertos_vars.h"
 #include "utils.h"
 #include "commands.h"
+#include <freertos_vars.h>
 /* USER CODE END INCLUDE */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -228,8 +229,14 @@ static int8_t CDC_Control_FS  (uint8_t cmd, uint8_t* pbuf, uint16_t length)
 	
     break;
 
-  case CDC_GET_LINE_CODING:     
-
+  case CDC_GET_LINE_CODING:
+    pbuf[0] = (uint8_t)(115200);
+    pbuf[1] = (uint8_t)(115200 >> 8);
+    pbuf[2] = (uint8_t)(115200 >> 16);
+    pbuf[3] = (uint8_t)(115200 >> 24);
+    pbuf[4] = 0;  // stop bits (1)
+    pbuf[5] = 0;  // parity (none)
+    pbuf[6] = 8;  // number of bits (8)
     break;
 
   case CDC_SET_CONTROL_LINE_STATE:
@@ -267,12 +274,8 @@ static int8_t CDC_Receive_FS (uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
 
-  // Process command
-  USB_receive_packet(Buf, *Len);
-
-  // Allow receiving more bytes
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
-  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  set_cmd_buffer(Buf, *Len);
+  osSemaphoreRelease(sem_usb_rx);
 
   return (USBD_OK);
   /* USER CODE END 6 */ 
