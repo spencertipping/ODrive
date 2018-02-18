@@ -53,16 +53,10 @@ float vbus_voltage = 12.0f;
 Motor_t motors[] = {
     {
         // M0
-        .control_mode = CTRL_MODE_VELOCITY_CONTROL,  //see: Motor_control_mode_t
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
-        .vel_setpoint = 400.0f,
-        .vel_gain = 15.0f / 200.0f,      // [A/(rad/s)] <sensorless example>
-        .vel_integrator_gain = 0.0f,     // [A/(rad/s * s)] <sensorless example>
-        .vel_integrator_current = 0.0f,  // [A]
-        .vel_limit = 20000.0f,           // [counts/s]
-        .current_setpoint = 0.0f,        // [A]
+        .current_setpoint = 1.0f,        // [A]
         .calibration_current = 10.0f,    // [A]
         .resistance_calib_max_voltage = 1.0f, // [V]
         .phase_inductance = 0.0f,        // to be set by measure_phase_inductance
@@ -127,15 +121,9 @@ Motor_t motors[] = {
         .timing_log = {0},
     },
     {                                             // M1
-        .control_mode = CTRL_MODE_VELOCITY_CONTROL,  //see: Motor_control_mode_t
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
-        .vel_setpoint = 0.0f,
-        .vel_gain = 5.0f / 10000.0f,             // [A/(counts/s)]
-        .vel_integrator_gain = 10.0f / 10000.0f,  // [A/(counts/s * s)]
-        .vel_integrator_current = 0.0f,           // [A]
-        .vel_limit = 20000.0f,                    // [counts/s]
         .current_setpoint = 0.0f,                 // [A]
         .calibration_current = 10.0f,             // [A]
         .resistance_calib_max_voltage = 1.0f, // [V]
@@ -218,18 +206,8 @@ static float brake_resistance = 0.47f;  // [ohm]
 // Command Handling
 //--------------------------------
 
-void set_vel_setpoint(Motor_t* motor, float vel_setpoint, float current_feed_forward) {
-    motor->vel_setpoint = vel_setpoint;
-    motor->current_setpoint = current_feed_forward;
-    motor->control_mode = CTRL_MODE_VELOCITY_CONTROL;
-#ifdef DEBUG_PRINT
-    printf("VELOCITY_CONTROL %3.3f %3.3f\n", motor->vel_setpoint, motor->current_setpoint);
-#endif
-}
-
 void set_current_setpoint(Motor_t* motor, float current_setpoint) {
     motor->current_setpoint = current_setpoint;
-    motor->control_mode = CTRL_MODE_CURRENT_CONTROL;
 #ifdef DEBUG_PRINT
     printf("CURRENT_CONTROL %3.3f\n", motor->current_setpoint);
 #endif
@@ -976,71 +954,39 @@ bool check_DRV_fault(Motor_t* motor) {
     return (nFAULT_state == GPIO_PIN_RESET) ? true : false;
 }
 
-void control_motor_loop(Motor_t* motor) {
-    while (*(motor->axis_legacy.enable_control)) {
-        if (osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT).status != osEventSignal) {
-            if (!motor->error) motor->error = ERROR_FOC_MEASUREMENT_TIMEOUT;
-            break;
-        }
-        if (check_DRV_fault(motor)) {
-            if (!motor->error) motor->error = ERROR_DRV_FAULT;
-            break;
-        }
-        update_rotor(motor);
-
-        // Position control
-        float vel_des = motor->vel_setpoint;
-
-        // Velocity limiting
-        float vel_lim = motor->vel_limit;
-        if (vel_des >  vel_lim) vel_des =  vel_lim;
-        if (vel_des < -vel_lim) vel_des = -vel_lim;
-
-        // Velocity control
-        float Iq = motor->current_setpoint;
-
-        float v_err = vel_des - get_pll_vel(motor);
-        if (motor->control_mode >= CTRL_MODE_VELOCITY_CONTROL)
-            Iq += motor->vel_gain * v_err;
-
-        // Velocity integral action before limiting
-        Iq += motor->vel_integrator_current;
-
-        // Current limiting
-        float Ilim = MACRO_MIN(motor->current_control.current_lim, motor->current_control.max_allowed_current);
-        bool limited = false;
-        if (Iq > Ilim) {
-            limited = true;
-            Iq = Ilim;
-        }
-        if (Iq < -Ilim) {
-            limited = true;
-            Iq = -Ilim;
-        }
-
-        // Velocity integrator (behaviour dependent on limiting)
-        if (motor->control_mode < CTRL_MODE_VELOCITY_CONTROL) {
-            // reset integral if not in use
-            motor->vel_integrator_current = 0.0f;
-        } else {
-            if (limited) {
-                // TODO make decayfactor configurable
-                motor->vel_integrator_current *= 0.99f;
-            } else {
-                motor->vel_integrator_current += (motor->vel_integrator_gain * current_meas_period) * v_err;
-            }
-        }
-
-        // Execute current command
-        if(!FOC_current(motor, 0.0f, Iq)){
-            break; // in case of error exit loop, motor->error has been set by FOC_current
-        }
-
-        update_brake_current();
-        ++(motor->loop_counter);
+void control_motor_loop(Motor_t* motor)
+{
+  while (*(motor->axis_legacy.enable_control))
+  {
+    if (osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT).status != osEventSignal)
+    {
+      if (!motor->error) motor->error = ERROR_FOC_MEASUREMENT_TIMEOUT;
+      break;
     }
 
-    //We are exiting control, reset Ibus, and update brake current
-    motor->current_control.Ibus = 0.0f;
+    if (check_DRV_fault(motor))
+    {
+      if (!motor->error) motor->error = ERROR_DRV_FAULT;
+      break;
+    }
+
+    // Pull latest rotor readings
+    update_rotor(motor);
+
+    // Set current per the set point
+    float const Iq_des = motor->current_setpoint;
+    float const Ilim   = MACRO_MIN(motor->current_control.current_lim,
+                                   motor->current_control.max_allowed_current);
+    float const Iq     = MACRO_MAX(-Ilim, MACRO_MIN(Ilim, Iq_des));
+
+    if (!FOC_current(motor, 0.0f, Iq))
+      break;
+
     update_brake_current();
+    ++(motor->loop_counter);
+  }
+
+  //We are exiting control, reset Ibus, and update brake current
+  motor->current_control.Ibus = 0.0f;
+  update_brake_current();
 }

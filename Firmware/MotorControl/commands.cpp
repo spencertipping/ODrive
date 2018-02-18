@@ -1,20 +1,11 @@
 
 /* Includes ------------------------------------------------------------------*/
 
-// TODO: remove this option
-// and once the legacy protocol is phased out, remove the seq-no hack in protocol.py
-// todo: make clean switches for protocol
-#define ENABLE_LEGACY_PROTOCOL
-
 #include "commands.h"
 #include "low_level.h"
 #include "protocol.hpp"
 #include "freertos_vars.h"
 #include "utils.h"
-
-#ifdef ENABLE_LEGACY_PROTOCOL
-#include "legacy_commands.h"
-#endif
 
 #include <cmsis_os.h>
 #include <memory>
@@ -57,19 +48,9 @@ static thread_local uint32_t deadline_ms = 0;
 
 
 // TODO: Autogenerate these functions
-void motors_0_set_vel_setpoint_func(void) {
-    set_vel_setpoint(&motors[0],
-        motors[0].set_vel_setpoint_args.vel_setpoint,
-        motors[0].set_vel_setpoint_args.current_feed_forward);
-}
 void motors_0_set_current_setpoint_func(void) {
     set_current_setpoint(&motors[0],
         motors[0].set_current_setpoint_args.current_setpoint);
-}
-void motors_1_set_vel_setpoint_func(void) {
-    set_vel_setpoint(&motors[1],
-        motors[1].set_vel_setpoint_args.vel_setpoint,
-        motors[1].set_vel_setpoint_args.current_feed_forward);
 }
 void motors_1_set_current_setpoint_func(void) {
     set_current_setpoint(&motors[1],
@@ -85,13 +66,7 @@ const Endpoint endpoints[] = {
 	Endpoint::make_property("UUID_1", (const uint32_t*)(ID_UNIQUE_ADDRESS + 1*4)),
 	Endpoint::make_property("UUID_2", (const uint32_t*)(ID_UNIQUE_ADDRESS + 2*4)),
     Endpoint::make_object("motor0"),
-        Endpoint::make_property("control_mode", reinterpret_cast<int32_t*>(&motors[0].control_mode)),
         Endpoint::make_property("error", reinterpret_cast<int32_t*>(&motors[0].error)),
-        Endpoint::make_property("vel_setpoint", &motors[0].vel_setpoint),
-        Endpoint::make_property("vel_gain", &motors[0].vel_gain),
-        Endpoint::make_property("vel_integrator_gain", &motors[0].vel_integrator_gain),
-        Endpoint::make_property("vel_integrator_current", &motors[0].vel_integrator_current),
-        Endpoint::make_property("vel_limit", &motors[0].vel_limit),
         Endpoint::make_property("current_setpoint", &motors[0].current_setpoint),
         Endpoint::make_property("calibration_current", &motors[0].calibration_current),
         Endpoint::make_property("phase_inductance", const_cast<const float*>(&motors[0].phase_inductance)),
@@ -129,22 +104,12 @@ const Endpoint endpoints[] = {
             Endpoint::make_property("Iq_measured", &motors[0].current_control.Iq_measured),
             Endpoint::make_property("Ibus", const_cast<const float*>(&motors[0].current_control.Ibus)),
         Endpoint::close_tree(),
-        Endpoint::make_function("set_vel_setpoint", &motors_0_set_vel_setpoint_func),
-            Endpoint::make_property("vel_setpoint", &motors[0].set_vel_setpoint_args.vel_setpoint),
-            Endpoint::make_property("current_feed_forward", &motors[0].set_vel_setpoint_args.current_feed_forward),
-        Endpoint::close_tree(),
         Endpoint::make_function("set_current_setpoint", &motors_0_set_current_setpoint_func),
             Endpoint::make_property("current_setpoint", &motors[0].set_current_setpoint_args.current_setpoint),
         Endpoint::close_tree(),
     Endpoint::close_tree(), // motor0
     Endpoint::make_object("motor1"),
-        Endpoint::make_property("control_mode", reinterpret_cast<int32_t*>(&motors[1].control_mode)),
         Endpoint::make_property("error", reinterpret_cast<int32_t*>(&motors[1].error)),
-        Endpoint::make_property("vel_setpoint", &motors[1].vel_setpoint),
-        Endpoint::make_property("vel_gain", &motors[1].vel_gain),
-        Endpoint::make_property("vel_integrator_gain", &motors[1].vel_integrator_gain),
-        Endpoint::make_property("vel_integrator_current", &motors[1].vel_integrator_current),
-        Endpoint::make_property("vel_limit", &motors[1].vel_limit),
         Endpoint::make_property("current_setpoint", &motors[1].current_setpoint),
         Endpoint::make_property("calibration_current", &motors[1].calibration_current),
         Endpoint::make_property("phase_inductance", const_cast<const float*>(&motors[1].phase_inductance)),
@@ -168,10 +133,6 @@ const Endpoint endpoints[] = {
             Endpoint::make_property("Iq_setpoint", &motors[1].current_control.Iq_setpoint),
             Endpoint::make_property("Iq_measured", &motors[1].current_control.Iq_measured),
             Endpoint::make_property("Ibus", const_cast<const float*>(&motors[1].current_control.Ibus)),
-        Endpoint::close_tree(),
-        Endpoint::make_function("set_vel_setpoint", &motors_1_set_vel_setpoint_func),
-            Endpoint::make_property("vel_setpoint", &motors[1].set_vel_setpoint_args.vel_setpoint),
-            Endpoint::make_property("current_feed_forward", &motors[1].set_vel_setpoint_args.current_feed_forward),
         Endpoint::close_tree(),
         Endpoint::make_function("set_current_setpoint", &motors_1_set_current_setpoint_func),
             Endpoint::make_property("current_setpoint", &motors[1].set_current_setpoint_args.current_setpoint),

@@ -54,13 +54,6 @@ typedef enum {
 
 } Error_t;
 
-// Note: these should be sorted from lowest level of control to
-// highest level of control, to allow "<" style comparisons.
-typedef enum {
-    CTRL_MODE_CURRENT_CONTROL,
-    CTRL_MODE_VELOCITY_CONTROL,
-} Motor_control_mode_t;
-
 typedef struct {
     float phB;
     float phC;
@@ -104,15 +97,9 @@ typedef struct {
 #define TIMING_LOG_SIZE 16
 typedef struct {
     Axis_legacy_t axis_legacy;
-    Motor_control_mode_t control_mode;
     bool enable_step_dir;
     float counts_per_step;
     Error_t error;
-    float vel_setpoint;
-    float vel_gain;
-    float vel_integrator_gain;
-    float vel_integrator_current;
-    float vel_limit;
     float current_setpoint;
     float calibration_current;
     float resistance_calib_max_voltage;
@@ -140,22 +127,14 @@ typedef struct {
     uint16_t timing_log[TIMING_LOG_SIZE];
     // Cache for remote procedure calls arguments
     struct {
-        float pos_setpoint; 
-        float vel_feed_forward;
-        float current_feed_forward;
-    } set_pos_setpoint_args;
-    struct {
-        float vel_setpoint;
-        float current_feed_forward;
-    } set_vel_setpoint_args;
-    struct {
         float current_setpoint;
     } set_current_setpoint_args;
 } Motor_t;
 
-typedef struct{
-        int type;
-        int index;
+typedef struct
+{
+  int type;
+  int index;
 } monitoring_slot;
 
 /* Exported constants --------------------------------------------------------*/
@@ -168,7 +147,6 @@ extern Motor_t motors[];
 /* Exported functions --------------------------------------------------------*/
 
 //Note: to control without feed forward, set feed forward terms to 0.0f.
-void set_vel_setpoint(Motor_t* motor, float vel_setpoint, float current_feed_forward);
 void set_current_setpoint(Motor_t* motor, float current_setpoint);
 
 void step_cb(uint16_t GPIO_Pin);

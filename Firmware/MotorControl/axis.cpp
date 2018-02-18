@@ -1,7 +1,6 @@
 
 #include "axis.h"
 #include <stdlib.h>
-#include "legacy_commands.h"
 
 //TODO: goal of refactor is to kick this out completely
 extern "C" {
@@ -29,11 +28,6 @@ void axis_thread_entry(void const* temp_motor_ptr) {
 void Axis::SetupLegacyMappings() {
     // Legacy reachability from C
     legacy_motor_ref_->axis_legacy.enable_control = &enable_control_;
-
-    // override for compatibility with legacy comms paradigm
-    // TODO next gen comms
-    exposed_bools[4 * axis_number_ + 1] = &enable_control_;
-    exposed_bools[4 * axis_number_ + 2] = &do_calibration_;
 }
 
 Axis::Axis(const AxisConfig& config, uint8_t axis_number, Motor_t* legacy_motor_ref)

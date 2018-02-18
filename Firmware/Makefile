@@ -80,7 +80,6 @@ C_SOURCES = \
   Src/usbd_cdc_if.c \
   Src/syscalls.c \
   MotorControl/utils.c \
-  MotorControl/legacy_commands.c \
   MotorControl/low_level.c
 CPP_SOURCES = \
   MotorControl/axis.cpp \
