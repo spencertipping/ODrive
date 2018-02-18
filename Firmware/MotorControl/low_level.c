@@ -56,8 +56,10 @@ Motor_t motors[] = {
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
-        .current_setpoint = 1.0f,        // [A]
-        .calibration_current = 10.0f,    // [A]
+        .vel_setpoint = 200.0f,           // [rad/s]
+        .vel_gain     = 1.0f / 100.0f,    // [A/(rad/s)]
+        .current_setpoint = 3.0f,         // [A]
+        .calibration_current = 10.0f,     // [A]
         .resistance_calib_max_voltage = 1.0f, // [V]
         .phase_inductance = 0.0f,        // to be set by measure_phase_inductance
         .phase_resistance = 0.0f,        // to be set by measure_phase_resistance
@@ -105,8 +107,8 @@ Motor_t motors[] = {
             .phase = 0.0f,                        // [rad]
             .pll_pos = 0.0f,                      // [rad]
             .pll_vel = 0.0f,                      // [rad/s]
-            .pll_kp = 0.0f,                       // [rad/s / rad]
-            .pll_ki = 0.0f,                       // [(rad/s^2) / rad]
+            .pll_kp = 0.01f,                      // [rad/s / rad]
+            .pll_ki = 0.001f,                     // [(rad/s^2) / rad]
             .observer_gain = 1000.0f,             // [rad/s]
             .flux_state = {0.0f, 0.0f},           // [Vs]
             .V_alpha_beta_memory = {0.0f, 0.0f},  // [V]
@@ -723,14 +725,30 @@ void update_rotor(Motor_t* const motor)
 
   // PLL
   // predict PLL phase with velocity
-  sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_vel);
+  float const dt              = current_meas_period;
+  float const predicted_phase = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_vel);
+  float const measured_phase  = fast_atan2(eta_b, eta_a);
 
-  float const newphase = fast_atan2(eta_b, eta_a);
-  if (isfinite(newphase)) sensorless->phase = newphase;
+  if (isfinite(measured_phase))
+  {
+    float corrected_phase = measured_phase;
 
-  float delta_phase = wrap_pm_pi(sensorless->phase - sensorless->pll_pos);
-  sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_kp * delta_phase);
-  sensorless->pll_vel += current_meas_period * sensorless->pll_ki * delta_phase;
+    // Fix up wrapping errors
+    while (sensorless->pll_vel > 0 && corrected_phase < sensorless->pll_pos) corrected_phase += 2.0f * M_PI;
+    while (sensorless->pll_vel < 0 && corrected_phase > sensorless->pll_pos) corrected_phase -= 2.0f * M_PI;
+
+    sensorless->pll_delta = corrected_phase - sensorless->pll_pos;
+
+    float const measured_vel     = wrap_pm_pi(corrected_phase - sensorless->pll_pos) / current_meas_period;
+    float const prediction_error = wrap_pm_pi(corrected_phase - predicted_phase);
+
+    sensorless->phase = measured_phase;
+    sensorless->pll_pos = wrap_pm_pi(
+      predicted_phase + dt * sensorless->pll_kp * prediction_error);
+
+    sensorless->pll_vel = 0.99f * sensorless->pll_vel
+                        + 0.01f * measured_vel;
+  }
 }
 
 float get_rotor_phase(Motor_t* motor) {
@@ -763,29 +781,22 @@ bool spin_up_sensorless(Motor_t* motor) {
     float ramp_step = current_meas_period / ramp_up_time;
 
     float phase = 0.0f;
-    float vel = ramp_up_distance / ramp_up_time;
     float I_mag = 0.0f;
 
     // spiral up current
     for (float x = 0.0f; x < 1.0f; x += ramp_step) {
-        phase = wrap_pm_pi(ramp_up_distance * x);
-        I_mag = motor->sensorless.spin_up_current * x;
-        if (!spin_up_timestep(motor, phase, I_mag))
-            return false;
+      phase = wrap_pm_pi(ramp_up_distance * x);
+      I_mag = motor->sensorless.spin_up_current * x;
+      if (!spin_up_timestep(motor, phase, I_mag))
+          return false;
     }
 
     // accelerate
+    /*
     while (vel < motor->sensorless.spin_up_target_vel) {
         vel += motor->sensorless.spin_up_acceleration * current_meas_period;
         phase = wrap_pm_pi(phase + vel * current_meas_period);
         if (!spin_up_timestep(motor, phase, motor->sensorless.spin_up_current))
-            return false;
-    }
-
-    // test keep spinning
-    /*while (true) {
-        phase = wrap_pm_pi(phase + vel * current_meas_period);
-        if(!spin_up_timestep(motor, phase, motor->sensorless.spin_up_current))
             return false;
     }*/
 
@@ -972,6 +983,12 @@ void control_motor_loop(Motor_t* motor)
 
     // Pull latest rotor readings
     update_rotor(motor);
+
+    /*
+    // Calculate velocity error
+    float const vel_error = motor->vel_setpoint - get_pll_vel(motor);
+    motor->current_setpoint = vel_error * motor->vel_gain;
+    */
 
     // Set current per the set point
     float const Iq_des = motor->current_setpoint;

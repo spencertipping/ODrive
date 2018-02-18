@@ -78,6 +78,7 @@ typedef struct {
     float phase;
     float pll_pos;
     float pll_vel;
+    float pll_delta;
     float pll_kp;
     float pll_ki;
     float observer_gain; // [rad/s]
@@ -100,6 +101,8 @@ typedef struct {
     bool enable_step_dir;
     float counts_per_step;
     Error_t error;
+    float vel_setpoint;
+    float vel_gain;
     float current_setpoint;
     float calibration_current;
     float resistance_calib_max_voltage;
