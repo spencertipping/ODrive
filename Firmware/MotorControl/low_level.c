@@ -57,7 +57,7 @@ Motor_t motors[] = {
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
-        .vel_setpoint = 800.0f,
+        .vel_setpoint = 400.0f,
         .vel_gain = 15.0f / 200.0f,      // [A/(rad/s)] <sensorless example>
         .vel_integrator_gain = 0.0f,     // [A/(rad/s * s)] <sensorless example>
         .vel_integrator_current = 0.0f,  // [A]
@@ -746,14 +746,9 @@ void update_rotor(Motor_t* const motor)
   // PLL
   // predict PLL phase with velocity
   sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_vel);
-  sensorless->phase = fast_atan2(eta_b, eta_a);
 
-  if (!isfinite(sensorless->phase))
-  {
-    //global_fault(ERROR_NAN_FROM_ATAN);
-    sensorless->phase = 0;
-    return;
-  }
+  float const newphase = fast_atan2(eta_b, eta_a);
+  if (isfinite(newphase)) sensorless->phase = newphase;
 
   float delta_phase = wrap_pm_pi(sensorless->phase - sensorless->pll_pos);
   sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_kp * delta_phase);
