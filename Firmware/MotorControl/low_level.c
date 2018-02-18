@@ -57,12 +57,9 @@ Motor_t motors[] = {
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
-        .vel_setpoint = 0.0f,
-        // .vel_setpoint = 800.0f, <sensorless example>
-        .vel_gain = 5.0f / 10000.0f,  // [A/(counts/s)]
-        // .vel_gain = 15.0f / 200.0f, // [A/(rad/s)] <sensorless example>
-        .vel_integrator_gain = 10.0f / 10000.0f,  // [A/(counts/s * s)]
-        // .vel_integrator_gain = 0.0f, // [A/(rad/s * s)] <sensorless example>
+        .vel_setpoint = 800.0f,
+        .vel_gain = 15.0f / 200.0f,      // [A/(rad/s)] <sensorless example>
+        .vel_integrator_gain = 0.0f,     // [A/(rad/s * s)] <sensorless example>
         .vel_integrator_current = 0.0f,  // [A]
         .vel_limit = 20000.0f,           // [counts/s]
         .current_setpoint = 0.0f,        // [A]
@@ -122,7 +119,7 @@ Motor_t motors[] = {
             .pm_flux_linkage = 0.0013579529f,     // [V / (rad/s)]  { 5.51328895422 / (<pole pairs> * <rpm/v>) }
             .estimator_good = false,
             .spin_up_current = 10.0f,        // [A]
-            .spin_up_acceleration = 40.0f,  // [rad/s^2]
+            .spin_up_acceleration = 400.0f,  // [rad/s^2]
             .spin_up_target_vel = 400.0f,    // [rad/s]
         },
         .loop_counter = 0,
@@ -566,7 +563,7 @@ bool measure_phase_resistance(Motor_t* motor, float test_current, float max_volt
     for (int i = 0; i < num_test_cycles; ++i) {
         osEvent evt = osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT);
         if (evt.status != osEventSignal) {
-            motor->error = ERROR_PHASE_RESISTANCE_MEASUREMENT_TIMEOUT;
+            if (!motor->error) motor->error = ERROR_PHASE_RESISTANCE_MEASUREMENT_TIMEOUT;
             return false;
         }
         float Ialpha = -(motor->current_meas.phB + motor->current_meas.phC);
@@ -580,7 +577,7 @@ bool measure_phase_resistance(Motor_t* motor, float test_current, float max_volt
         // Check we meet deadlines after queueing
         motor->last_cpu_time = check_timing(motor);
         if (!(motor->last_cpu_time < motor->control_deadline)) {
-            motor->error = ERROR_PHASE_RESISTANCE_TIMING;
+            if (!motor->error) motor->error = ERROR_PHASE_RESISTANCE_TIMING;
             return false;
         }
     }
@@ -591,7 +588,7 @@ bool measure_phase_resistance(Motor_t* motor, float test_current, float max_volt
     float R = test_voltage / test_current;
     motor->phase_resistance = R;
     if (fabs(test_voltage) == fabs(max_voltage) || R < 0.01f || R > 1.0f) {
-        motor->error = ERROR_PHASE_RESISTANCE_OUT_OF_RANGE;
+        if (!motor->error) motor->error = ERROR_PHASE_RESISTANCE_OUT_OF_RANGE;
         return false;
     }
     return true;
@@ -605,7 +602,7 @@ bool measure_phase_inductance(Motor_t* motor, float voltage_low, float voltage_h
     for (int t = 0; t < num_cycles; ++t) {
         for (int i = 0; i < 2; ++i) {
             if (osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT).status != osEventSignal) {
-                motor->error = ERROR_PHASE_INDUCTANCE_MEASUREMENT_TIMEOUT;
+                if (!motor->error) motor->error = ERROR_PHASE_INDUCTANCE_MEASUREMENT_TIMEOUT;
                 return false;
             }
             Ialphas[i] += -motor->current_meas.phB - motor->current_meas.phC;
@@ -616,7 +613,7 @@ bool measure_phase_inductance(Motor_t* motor, float voltage_low, float voltage_h
             // Check we meet deadlines after queueing
             motor->last_cpu_time = check_timing(motor);
             if (!(motor->last_cpu_time < motor->control_deadline)) {
-                motor->error = ERROR_PHASE_INDUCTANCE_TIMING;
+                if (!motor->error) motor->error = ERROR_PHASE_INDUCTANCE_TIMING;
                 return false;
             }
         }
@@ -634,7 +631,7 @@ bool measure_phase_inductance(Motor_t* motor, float voltage_low, float voltage_h
     motor->phase_inductance = L;
     // TODO arbitrary values set for now
     if (L < 1e-6f || L > 500e-6f) {
-        motor->error = ERROR_PHASE_INDUCTANCE_OUT_OF_RANGE;
+        if (!motor->error) motor->error = ERROR_PHASE_INDUCTANCE_OUT_OF_RANGE;
         return false;
     }
     return true;
@@ -662,69 +659,105 @@ bool motor_calibration(Motor_t* motor) {
 // Main motor control
 //--------------------------------
 
-void update_rotor(Motor_t* motor) {
-    // Algorithm based on paper: Sensorless Control of Surface-Mount Permanent-Magnet Synchronous Motors Based on a Nonlinear Observer
-    // http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
-    // In particular, equation 8 (and by extension eqn 4 and 6).
+void update_rotor(Motor_t* const motor)
+{
+  // Algorithm based on paper: Sensorless Control of Surface-Mount Permanent-Magnet Synchronous Motors Based on a Nonlinear Observer
+  // http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
+  // In particular, equation 8 (and by extension eqn 4 and 6).
 
-    // The V_alpha_beta applied immedietly prior to the current measurement associated with this cycle
-    // is the one computed two cycles ago. To get the correct measurement, it was stored twice:
-    // once by final_v_alpha/final_v_beta in the current control reporting, and once by V_alpha_beta_memory.
+  // The V_alpha_beta applied immedietly prior to the current measurement associated with this cycle
+  // is the one computed two cycles ago. To get the correct measurement, it was stored twice:
+  // once by final_v_alpha/final_v_beta in the current control reporting, and once by V_alpha_beta_memory.
 
-    //for convenience
-    Sensorless_t* sensorless = &motor->sensorless;
+  //for convenience
+  Sensorless_t* const sensorless = &motor->sensorless;
 
-    // Clarke transform
-    float I_alpha_beta[2] = {
-        -motor->current_meas.phB - motor->current_meas.phC,
-        one_by_sqrt3 * (motor->current_meas.phB - motor->current_meas.phC)};
+  // Up front: if stuff is NaN, reset it to a sane state
+#define reset_if_nan(v) if (!isfinite(v)) (v) = 0;
+  reset_if_nan(motor->sensorless.flux_state[0]);
+  reset_if_nan(motor->sensorless.flux_state[1]);
+  reset_if_nan(motor->sensorless.V_alpha_beta_memory[0]);
+  reset_if_nan(motor->sensorless.V_alpha_beta_memory[1]);
+#undef reset_if_nan
 
-    // alpha-beta vector operations
-    float eta[2];
-    for (int i = 0; i <= 1; ++i) {
-        // y is the total flux-driving voltage (see paper eqn 4)
-        float y = -motor->phase_resistance * I_alpha_beta[i] + sensorless->V_alpha_beta_memory[i];
-        // flux dynamics (prediction)
-        float x_dot = y;
-        // integrate prediction to current timestep
-        sensorless->flux_state[i] += x_dot * current_meas_period;
+  // Clarke transform
+  float const ialpha = -motor->current_meas.phB - motor->current_meas.phC;
+  float const ibeta  = one_by_sqrt3 * (motor->current_meas.phB - motor->current_meas.phC);
 
-        // eta is the estimated permanent magnet flux (see paper eqn 6)
-        eta[i] = sensorless->flux_state[i] - motor->phase_inductance * I_alpha_beta[i];
-    }
+  if (!isfinite(ialpha) || !isfinite(ibeta))
+  {
+    global_fault(ERROR_NAN_AT_STAGE1);
+    return;
+  }
 
-    // Non-linear observer (see paper eqn 8):
-    float pm_flux_sqr = sensorless->pm_flux_linkage * sensorless->pm_flux_linkage;
-    float est_pm_flux_sqr = eta[0] * eta[0] + eta[1] * eta[1];
-    float bandwidth_factor = 1.0f / (sensorless->pm_flux_linkage * sensorless->pm_flux_linkage);
-    float eta_factor = 0.5f * (sensorless->observer_gain * bandwidth_factor) * (pm_flux_sqr - est_pm_flux_sqr);
+  // Equations 4-8 in the paper
+  float const ya = -motor->phase_resistance * ialpha + sensorless->V_alpha_beta_memory[0];
+  float const yb = -motor->phase_resistance * ibeta  + sensorless->V_alpha_beta_memory[1];
 
-    static float eta_factor_avg_test = 0.0f;
-    eta_factor_avg_test += 0.001f * (eta_factor - eta_factor_avg_test);
+  if (!isfinite(ya) || !isfinite(yb))
+  {
+    global_fault(ERROR_NAN_AT_STAGE2);
+    return;
+  }
 
-    // alpha-beta vector operations
-    for (int i = 0; i <= 1; ++i) {
-        // add observer action to flux estimate dynamics
-        float x_dot = eta_factor * eta[i];
-        // convert action to discrete-time
-        sensorless->flux_state[i] += x_dot * current_meas_period;
-        // update new eta
-        eta[i] = sensorless->flux_state[i] - motor->phase_inductance * I_alpha_beta[i];
-    }
+  sensorless->flux_state[0] += ya * current_meas_period;
+  sensorless->flux_state[1] += yb * current_meas_period;
+  float eta_a = sensorless->flux_state[0] - motor->phase_inductance * ialpha;
+  float eta_b = sensorless->flux_state[1] - motor->phase_inductance * ibeta;
 
-    // Flux state estimation done, store V_alpha_beta for next timestep
-    sensorless->V_alpha_beta_memory[0] = motor->current_control.final_v_alpha;
-    sensorless->V_alpha_beta_memory[1] = motor->current_control.final_v_beta;
+  if (!isfinite(eta_a) || !isfinite(eta_b))
+  {
+    global_fault(ERROR_NAN_AT_STAGE3);
+    return;
+  }
 
-    // PLL
-    // predict PLL phase with velocity
-    sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_vel);
-    // update PLL phase with observer permanent magnet phase
-    sensorless->phase = fast_atan2(eta[1], eta[0]);
-    float delta_phase = wrap_pm_pi(sensorless->phase - sensorless->pll_pos);
-    sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_kp * delta_phase);
-    // update PLL velocity
-    sensorless->pll_vel += current_meas_period * sensorless->pll_ki * delta_phase;
+  // Non-linear observer (see paper eqn 8):
+  float const pm_flux_sqr = sensorless->pm_flux_linkage * sensorless->pm_flux_linkage;
+  float const est_pm_flux_sqr = eta_a*eta_a + eta_b*eta_b;
+  float const bandwidth_factor = 1.0f / pm_flux_sqr;
+  float const eta_factor = 0.5f * (sensorless->observer_gain * bandwidth_factor) * (pm_flux_sqr - est_pm_flux_sqr);
+
+  if (!isfinite(bandwidth_factor) || !isfinite(eta_factor))
+  {
+    global_fault(ERROR_NAN_AT_STAGE4);
+    return;
+  }
+
+  static float eta_factor_avg_test = 0.0f;
+  eta_factor_avg_test += 0.001f * (eta_factor - eta_factor_avg_test);
+
+  // add observer action to flux estimate dynamics
+  sensorless->flux_state[0] += eta_factor * eta_a * current_meas_period;
+  sensorless->flux_state[1] += eta_factor * eta_b * current_meas_period;
+  eta_a += sensorless->flux_state[0] - motor->phase_inductance * ialpha;
+  eta_b += sensorless->flux_state[1] - motor->phase_inductance * ibeta;
+
+  if (   !isfinite(motor->current_control.final_v_alpha)
+      || !isfinite(motor->current_control.final_v_beta))
+  {
+    global_fault(ERROR_NAN_AT_CURRENTCONTROL);
+    return;
+  }
+
+  // Flux state estimation done, store V_alpha_beta for next timestep
+  sensorless->V_alpha_beta_memory[0] = motor->current_control.final_v_alpha;
+  sensorless->V_alpha_beta_memory[1] = motor->current_control.final_v_beta;
+
+  // PLL
+  // predict PLL phase with velocity
+  sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_vel);
+  sensorless->phase = fast_atan2(eta_b, eta_a);
+
+  if (!isfinite(sensorless->phase))
+  {
+    //global_fault(ERROR_NAN_FROM_ATAN);
+    sensorless->phase = 0;
+    return;
+  }
+
+  float delta_phase = wrap_pm_pi(sensorless->phase - sensorless->pll_pos);
+  sensorless->pll_pos = wrap_pm_pi(sensorless->pll_pos + current_meas_period * sensorless->pll_kp * delta_phase);
+  sensorless->pll_vel += current_meas_period * sensorless->pll_ki * delta_phase;
 }
 
 float get_rotor_phase(Motor_t* motor) {
@@ -738,7 +771,7 @@ float get_pll_vel(Motor_t* motor) {
 bool spin_up_timestep(Motor_t* motor, float phase, float I_mag) {
     // wait for new timestep
     if (osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT).status != osEventSignal) {
-        motor->error = ERROR_SPIN_UP_TIMEOUT;
+        if (!motor->error) motor->error = ERROR_SPIN_UP_TIMEOUT;
         return false;
     }
     // run estimator
@@ -841,7 +874,7 @@ bool FOC_voltage(Motor_t* motor, float v_d, float v_q) {
 
     // Check we meet deadlines after queueing
     if (!(check_timing(motor) < motor->control_deadline)) {
-        motor->error = ERROR_FOC_VOLTAGE_TIMING;
+        if (!motor->error) motor->error = ERROR_FOC_VOLTAGE_TIMING;
         return false;
     }
     return true;
@@ -850,12 +883,24 @@ bool FOC_voltage(Motor_t* motor, float v_d, float v_q) {
 bool FOC_current(Motor_t* motor, float Id_des, float Iq_des) {
     Current_control_t* ictrl = &motor->current_control;
 
+    if (!isfinite(Id_des) || !isfinite(Iq_des))
+    {
+      global_fault(ERROR_NAN_IQID);
+      return false;
+    }
+
     // For Reporting
     ictrl->Iq_setpoint = Iq_des;
 
     // Clarke transform
     float Ialpha = -motor->current_meas.phB - motor->current_meas.phC;
     float Ibeta = one_by_sqrt3 * (motor->current_meas.phB - motor->current_meas.phC);
+
+    if (!isfinite(Ialpha) || !isfinite(Ibeta))
+    {
+      global_fault(ERROR_NAN_IAB);
+      return false;
+    }
 
     // Park transform
     float phase = get_rotor_phase(motor);
@@ -864,6 +909,12 @@ bool FOC_current(Motor_t* motor, float Id_des, float Iq_des) {
     float Id = c * Ialpha + s * Ibeta;
     float Iq = c * Ibeta - s * Ialpha;
     ictrl->Iq_measured = Iq;
+
+    if (!isfinite(phase))
+    {
+      global_fault(ERROR_NAN_PHASE);
+      return false;
+    }
 
     // Current error
     float Ierr_d = Id_des - Id;
@@ -882,6 +933,13 @@ bool FOC_current(Motor_t* motor, float Id_des, float Iq_des) {
     // Vector modulation saturation, lock integrator if saturated
     // TODO make maximum modulation configurable
     float mod_scalefactor = 0.80f * sqrt3_by_2 * 1.0f / sqrtf(mod_d * mod_d + mod_q * mod_q);
+
+    if (!isfinite(mod_scalefactor))
+    {
+      global_fault(ERROR_NAN_MODSCALE);
+      return false;
+    }
+
     if (mod_scalefactor < 1.0f) {
         mod_d *= mod_scalefactor;
         mod_q *= mod_scalefactor;
@@ -910,7 +968,7 @@ bool FOC_current(Motor_t* motor, float Id_des, float Iq_des) {
     // Check we meet deadlines after queueing
     motor->last_cpu_time = check_timing(motor);
     if (!(motor->last_cpu_time < motor->control_deadline)) {
-        motor->error = ERROR_FOC_TIMING;
+        if (!motor->error) motor->error = ERROR_FOC_TIMING;
         return false;
     }
     return true;
@@ -926,11 +984,11 @@ bool check_DRV_fault(Motor_t* motor) {
 void control_motor_loop(Motor_t* motor) {
     while (*(motor->axis_legacy.enable_control)) {
         if (osSignalWait(M_SIGNAL_PH_CURRENT_MEAS, PH_CURRENT_MEAS_TIMEOUT).status != osEventSignal) {
-            motor->error = ERROR_FOC_MEASUREMENT_TIMEOUT;
+            if (!motor->error) motor->error = ERROR_FOC_MEASUREMENT_TIMEOUT;
             break;
         }
         if (check_DRV_fault(motor)) {
-            motor->error = ERROR_DRV_FAULT;
+            if (!motor->error) motor->error = ERROR_DRV_FAULT;
             break;
         }
         update_rotor(motor);

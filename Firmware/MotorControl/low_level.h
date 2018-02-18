@@ -38,6 +38,20 @@ typedef enum {
     ERROR_SPIN_UP_TIMEOUT,
     ERROR_DRV_FAULT,
     ERROR_NOT_IMPLEMENTED_MOTOR_TYPE,
+
+    ERROR_NAN_AT_STAGE1 = 101,
+    ERROR_NAN_AT_STAGE2 = 102,
+    ERROR_NAN_AT_STAGE3 = 103,
+    ERROR_NAN_AT_STAGE4 = 104,
+
+    ERROR_NAN_AT_CURRENTCONTROL = 105,
+    ERROR_NAN_FROM_ATAN = 106,
+
+    ERROR_NAN_PHASE = 107,
+    ERROR_NAN_IQID = 108,
+    ERROR_NAN_MODSCALE = 109,
+    ERROR_NAN_IAB = 110,
+
 } Error_t;
 
 // Note: these should be sorted from lowest level of control to
