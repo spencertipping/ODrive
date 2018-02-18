@@ -18,8 +18,6 @@ SerialPrintf_t serial_printf_select = SERIAL_PRINTF_IS_UART;
 float* exposed_floats[] = {
     &vbus_voltage, // ro
     NULL, //&elec_rad_per_enc, // ro
-    &motors[0].pos_setpoint, // rw
-    &motors[0].pos_gain, // rw
     &motors[0].vel_setpoint, // rw
     &motors[0].vel_gain, // rw
     &motors[0].vel_integrator_gain, // rw
@@ -41,13 +39,6 @@ float* exposed_floats[] = {
     &motors[0].current_control.v_current_control_integral_d, // rw
     &motors[0].current_control.v_current_control_integral_q, // rw
     &motors[0].current_control.Ibus, // ro
-    &motors[0].encoder.phase, // ro
-    &motors[0].encoder.pll_pos, // rw
-    &motors[0].encoder.pll_vel, // rw
-    &motors[0].encoder.pll_kp, // rw
-    &motors[0].encoder.pll_ki, // rw
-    &motors[1].pos_setpoint, // rw
-    &motors[1].pos_gain, // rw
     &motors[1].vel_setpoint, // rw
     &motors[1].vel_gain, // rw
     &motors[1].vel_integrator_gain, // rw
@@ -69,21 +60,12 @@ float* exposed_floats[] = {
     &motors[1].current_control.v_current_control_integral_d, // rw
     &motors[1].current_control.v_current_control_integral_q, // rw
     &motors[1].current_control.Ibus, // ro
-    &motors[1].encoder.phase, // ro
-    &motors[1].encoder.pll_pos, // rw
-    &motors[1].encoder.pll_vel, // rw
-    &motors[1].encoder.pll_kp, // rw
-    &motors[1].encoder.pll_ki, // rw
 };
 
 int* exposed_ints[] = {
     (int*)&motors[0].control_mode, // rw
-    (int*)&motors[0].encoder.encoder_offset, // rw
-    (int*)&motors[0].encoder.encoder_state, // ro
     (int*)&motors[0].error, // rw
     (int*)&motors[1].control_mode, // rw
-    (int*)&motors[1].encoder.encoder_offset, // rw
-    (int*)&motors[1].encoder.encoder_state, // ro
     (int*)&motors[1].error, // rw
 };
 
@@ -122,15 +104,7 @@ void legacy_parse_cmd(const uint8_t* buffer, size_t len, size_t buffer_capacity,
     ((uint8_t *)buffer)[len < buffer_capacity ? len : (buffer_capacity - 1)] = 0;
 
     // check incoming packet type
-    if (buffer[0] == 'p') {
-        // position control
-        unsigned motor_number;
-        float pos_setpoint, vel_feed_forward, current_feed_forward;
-        int numscan = sscanf((const char*)buffer, "p %u %f %f %f", &motor_number, &pos_setpoint, &vel_feed_forward, &current_feed_forward);
-        if (numscan == 4 && motor_number < num_motors) {
-            set_pos_setpoint(&motors[motor_number], pos_setpoint, vel_feed_forward, current_feed_forward);
-        }
-    } else if (buffer[0] == 'v') {
+    if (buffer[0] == 'v') {
         // velocity control
         unsigned motor_number;
         float vel_feed_forward, current_feed_forward;
@@ -223,13 +197,6 @@ void legacy_parse_cmd(const uint8_t* buffer, size_t len, size_t buffer_capacity,
         int numscan = sscanf((const char*)buffer, "o %u", &limit);
         if (numscan == 1) {
             print_monitoring(limit);
-        }
-    } else if (buffer[0] == 't') { // Run Anti-Cogging Calibration
-        for (int i = 0; i < num_motors; i++) {
-            // Ensure the cogging map was correctly allocated earlier and that the motor is capable of calibrating
-            if (motors[i].anticogging.cogging_map != NULL && motors[i].error == ERROR_NO_ERROR) {
-                motors[i].anticogging.calib_anticogging = true;
-            }
         }
     }
 }

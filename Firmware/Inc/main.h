@@ -53,7 +53,7 @@
 /* USER CODE BEGIN Includes */
 
 #define HW_VERSION_MAJOR 3
-#define HW_VERSION_MINOR 4
+#define HW_VERSION_MINOR 3
 // #define HW_VERSION_HIGH_VOLTAGE true
 
 #if HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 1 \
