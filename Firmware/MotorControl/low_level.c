@@ -55,7 +55,7 @@ const float elec_rad_per_enc = POLE_PAIRS * 2 * M_PI * (1.0f / (float)ENCODER_CP
 Motor_t motors[] = {
     {
         // M0
-        .control_mode = CTRL_MODE_POSITION_CONTROL,  //see: Motor_control_mode_t
+        .control_mode = CTRL_MODE_VELOCITY_CONTROL,  //see: Motor_control_mode_t
         .enable_step_dir = false,                    //auto enabled after calibration
         .counts_per_step = 2.0f,
         .error = ERROR_NO_ERROR,
@@ -116,9 +116,9 @@ Motor_t motors[] = {
             .Iq_measured = 0.0f,
             .max_allowed_current = 0.0f,
         },
-        // .rotor_mode = ROTOR_MODE_SENSORLESS,
+        .rotor_mode = ROTOR_MODE_SENSORLESS,
         // .rotor_mode = ROTOR_MODE_RUN_ENCODER_TEST_SENSORLESS,
-        .rotor_mode = ROTOR_MODE_ENCODER,
+        // .rotor_mode = ROTOR_MODE_ENCODER,
         .encoder = {
             .encoder_timer = &htim3,
             .use_index = false,
@@ -144,11 +144,11 @@ Motor_t motors[] = {
             .observer_gain = 1000.0f,             // [rad/s]
             .flux_state = {0.0f, 0.0f},           // [Vs]
             .V_alpha_beta_memory = {0.0f, 0.0f},  // [V]
-            .pm_flux_linkage = 1.58e-3f,          // [V / (rad/s)]  { 5.51328895422 / (<pole pairs> * <rpm/v>) }
+            .pm_flux_linkage = 0.0013579529f,     // [V / (rad/s)]  { 5.51328895422 / (<pole pairs> * <rpm/v>) }
             .estimator_good = false,
             .spin_up_current = 10.0f,        // [A]
-            .spin_up_acceleration = 400.0f,  // [rad/s^2]
-            .spin_up_target_vel = 400.0f,    // [rad/s]
+            .spin_up_acceleration = 40.0f,  // [rad/s^2]
+            .spin_up_target_vel = 2000.0f,    // [rad/s]
         },
         .loop_counter = 0,
         .timing_log_index = 0,
@@ -1136,12 +1136,12 @@ bool spin_up_sensorless(Motor_t* motor) {
             return false;
     }
 
-    // // test keep spinning
-    // while (true) {
-    //     phase = wrap_pm_pi(phase + vel * current_meas_period);
-    //     if(!spin_up_timestep(motor, phase, motor->sensorless.spin_up_current))
-    //         return false;
-    // }
+    // test keep spinning
+    while (true) {
+        phase = wrap_pm_pi(phase + vel * current_meas_period);
+        if(!spin_up_timestep(motor, phase, motor->sensorless.spin_up_current))
+            return false;
+    }
 
     return true;
 

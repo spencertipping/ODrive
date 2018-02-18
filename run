@@ -1,0 +1,8 @@
+#!/bin/bash
+docker build .
+image=`docker build -q .`
+
+docker run --rm -it --privileged --name odrive \
+       -v $PWD:/odrive \
+       -v /dev/bus/usb:/dev/bus/usb \
+       $image
