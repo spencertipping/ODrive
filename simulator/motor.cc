@@ -21,7 +21,7 @@ uint16_t motor::adc_sample_of(double const real_voltage) const
 {
   double const with_error = real_voltage
                           + ((double) rand() / RAND_MAX - 0.5) * adc_jitter;
-  uint16_t measured = (uint16_t) (with_error / v33_voltage * 4096 + 0.5);
+  uint16_t measured = (uint16_t) (with_error / v33 * 4096 + 0.5);
   return measured < 0 ? 0 : measured > 4095 ? 4095 : measured;
 }
 
@@ -71,7 +71,7 @@ void motor::step()
 
   // TODO: the below dot products don't look right; how do we get 1.5α total?
   // Do we need to model emf_bc?
-  double const emf_magnitude = rotor_velocity * TAU * flux_linkage;
+  double const emf_mag = rotor_velocity * TAU * flux_linkage;
   double const emf_ab =
     emf_mag * (q_alpha - (-0.5 * q_alpha + -sqrt(3)/2.0 * q_beta));
   double const emf_ac =

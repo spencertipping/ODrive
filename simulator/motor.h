@@ -18,9 +18,9 @@ namespace simulator
 #define MOTOR_KV 580                // rpm/V
 #define MOTOR_POLE_PAIRS 7
 
-#define ROTOR_WEIGHT 100            // grams
-#define ROTOR_RADIUS 12             // mm
-#define ROTOR_LENGTH 40             // mm
+#define ROTOR_WEIGHT (100 / 1000.0) // kg
+#define ROTOR_RADIUS (12  / 1000.0) // m
+#define ROTOR_LENGTH (40  / 1000.0) // m
 
 #define ROTOR_INERTIA \
   (0.5 * ROTOR_RADIUS*ROTOR_RADIUS * ROTOR_WEIGHT * ROTOR_LENGTH)
@@ -58,18 +58,18 @@ public:
   // ideal three-phase model.
   //
   // flux_linkage is measured in peak V / (rad/sec); this also serves as the
-  // motor's torque constant.
+  // motor's torque constant (N·m / quadrature amp).
   double flux_linkage     = 5.51328895422 / (MOTOR_KV * MOTOR_POLE_PAIRS);
 
   double pwm_cycle_time   = PWM_CYCLE;        // seconds
-  double rotor_inertia    = ROTOR_INERTIA;    // g·m·m/sec
+  double rotor_inertia    = ROTOR_INERTIA;    // kg·m²/sec
   double trapezoidal_bias = 0.7;              // interpolation factor
 
-  double rotor_windage    = 0;                // N·m / (τ²/s)
+  double rotor_windage    = 1e-4;             // N·m / (τ²/s)
   double dynamic_friction = 1e-5;             // N·m / (τ/s)
   double cogging_torque   = 0.01;             // N·m
-  double resistance       = 0.2;              // ohms
-  double inductance       = 0.0005;           // henries
+  double phase_resistance = 0.2;              // ohms
+  double phase_inductance = 0.0005;           // henries
   double shunt_amp_gain   = 40.0;             // V / V
 
   // Error modeling
@@ -82,8 +82,8 @@ public:
         double phase_resistance_,
         double phase_inductance_)
     : rotor_inertia(rotor_inertia_),
-      resistance(phase_resistance_),
-      inductance(phase_inductance_) {}
+      phase_resistance(phase_resistance_),
+      phase_inductance(phase_inductance_) {}
 
 
   // Time stepping
