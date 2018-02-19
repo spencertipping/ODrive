@@ -1,7 +1,6 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-
 #include <stdint.h>
 
 
@@ -14,6 +13,9 @@ namespace simulator
 #define PWM_CYCLE  (1.0 / ((double) CPU_HZ / PWM_CLOCKS))
 
 // Remotely sane motor defaults
+#define MOTOR_KV 580                // rpm/V
+#define MOTOR_POLE_PAIRS 7
+
 #define ROTOR_WEIGHT 100            // grams
 #define ROTOR_RADIUS 12             // mm
 #define ROTOR_LENGTH 40             // mm
@@ -24,57 +26,91 @@ namespace simulator
 // NB: I use τ as a unit of measure equal to one turn.
 #define TAU (2.0 * M_PI)            // radians per turn
 
+
 class motor
 {
 public:
   // Time-variant state
-  double time             = 0;                // seconds
+  uint64_t cycles         = 0;                // CPU clock cycles
   double rotor_position   = 0;                // absolute rotor turns
   double rotor_velocity   = 0;                // τ/sec
   double ab_current       = 0;                // A
   double ac_current       = 0;                // A
 
-  double a_pwm            = 0.5;              // duty cycle (0-1 range)
-  double b_pwm            = 0.5;              // duty cycle (0-1 range)
-  double c_pwm            = 0.5;              // duty cycle (0-1 range)
+  uint16_t a_pwm          = 4096;             // number of cycles for ON state
+  uint16_t b_pwm          = 4096;             // number of cycles
+  uint16_t c_pwm          = 4096;             // number of cycles
 
   // Hardware parameters
+  double v33              = 3.3;              // V
+  double vbus             = 12;               // V
+  double vbus_divider     = 11;               // V
+  double shunt_resistance = 675e-6;           // ohms (v3.3 board)
+
+  // NB: these parameters are unusual in that they don't follow the ideal
+  // three-phase model; they instead model the common BLDC configuration that
+  // involves multiple pole-cycles per revolution. I'm not modeling actual
+  // revolutions anywhere in the code; these quantities are converted to the
+  // ideal three-phase model.
+  double kv               = MOTOR_KV;         // rpm/V
+  int    pole_pairs       = MOTOR_POLE_PAIRS; // hz/revolution
+
   double pwm_cycle_time   = PWM_CYCLE;        // seconds
   double rotor_inertia    = ROTOR_INERTIA;    // g·m·m/sec
+  double trapezoidal_bias = 0.7;              // interpolation factor
+
   double rotor_windage    = 0;                // N·m / (τ²/s)
-  double cogging_torque   = 0.01;             // N·m
   double dynamic_friction = 1e-5;             // N·m / (τ/s)
+  double cogging_torque   = 0.01;             // N·m
   double resistance       = 0.2;              // ohms
   double inductance       = 0.0005;           // henries
-  double shunt_gain       = 40.0;             // V / V
+  double shunt_amp_gain   = 40.0;             // V / V
 
   // Error modeling
   double adc_jitter       = 0.01;   // expected error in volts per 3.3v reading
   double shunt_b_error    = 0;      // resistor bias: ohms/ohm
   double shunt_c_error    = 0;      // resistor bias: ohms/ohm
 
-  double ohms_b_per_a     = 1;      // ohms per ohm (coil B vs coil A)
-  double ohms_c_per_a     = 1;      // ohms per ohm
-  double henries_b_per_a  = 1;      // henries per henry
-  double henries_c_per_a  = 1;      // henries per henry
 
-
-  motor(double rotor_momentum_,
+  motor(double rotor_inertia_,
         double phase_resistance_,
         double phase_inductance_)
-
-    : rotor_momentum(rotor_momentum_),
+    : rotor_inertia(rotor_inertia_),
       resistance(phase_resistance_),
       inductance(phase_inductance_) {}
 
 
+  // Time stepping
+  void step();
+  inline double time() const { return time_at(cycles); }
+
   // Hardware functions
-  void drive(double a, double b, double c);
+  inline void drive(double const a, double const b, double const c)
+  {
+    a_pwm = (uint16_t) (a * PWM_CLOCKS);
+    b_pwm = (uint16_t) (b * PWM_CLOCKS);
+    c_pwm = (uint16_t) (c * PWM_CLOCKS);
+  }
+
   uint16_t adc_shunt_b() const;
   uint16_t adc_shunt_c() const;
 
-  // Time stepping
-  void step(double dt, double quantum);
+  // Internal functions
+  double alpha(double t) const;
+  double beta(double t)  const;
+
+  uint16_t adc_sample_of(double real_voltage) const;
+
+  inline double flux_linkage()                      const { return 5.51328895422 / (kv * pole_pairs); }
+  inline double rotor_at    (double   const t)      const { return rotor_position + t*rotor_velocity; }
+  inline double time_at     (uint64_t const cycles) const { return (double) cycles / CPU_HZ; }
+
+  inline double driven_va_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < a_pwm ? vbus : 0; }
+  inline double driven_vb_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < b_pwm ? vbus : 0; }
+  inline double driven_vc_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < c_pwm ? vbus : 0; }
+
+  inline double driven_ab_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vb_at(cycles); }
+  inline double driven_ac_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vc_at(cycles); }
 };
 
 }
