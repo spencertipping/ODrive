@@ -1,6 +1,8 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
+#include <cmath>
+
 #include <stdint.h>
 
 
@@ -25,6 +27,8 @@ namespace simulator
 
 // NB: I use τ as a unit of measure equal to one turn.
 #define TAU (2.0 * M_PI)            // radians per turn
+
+#define RMS_TO_PEAK (sqrt(2))
 
 
 class motor
@@ -52,8 +56,10 @@ public:
   // involves multiple pole-cycles per revolution. I'm not modeling actual
   // revolutions anywhere in the code; these quantities are converted to the
   // ideal three-phase model.
-  double kv               = MOTOR_KV;         // rpm/V
-  int    pole_pairs       = MOTOR_POLE_PAIRS; // hz/revolution
+  //
+  // flux_linkage is measured in peak V / (rad/sec); this also serves as the
+  // motor's torque constant.
+  double flux_linkage     = 5.51328895422 / (MOTOR_KV * MOTOR_POLE_PAIRS);
 
   double pwm_cycle_time   = PWM_CYCLE;        // seconds
   double rotor_inertia    = ROTOR_INERTIA;    // g·m·m/sec
@@ -96,12 +102,25 @@ public:
   uint16_t adc_shunt_c() const;
 
   // Internal functions
-  double alpha(double t) const;
-  double beta(double t)  const;
-
   uint16_t adc_sample_of(double real_voltage) const;
 
-  inline double flux_linkage()                      const { return 5.51328895422 / (kv * pole_pairs); }
+  // (partially-)trapezoidal sine
+  inline double trapezoid(double const t)
+  {
+    double const tmod = std::fmod(t, 1.0);
+    return tmod   >= 3.0/6 ?
+             tmod >= 5.0/6 ? ( tmod - 11.0/6) * 6.0
+           : tmod >= 4.0/6 ? -1.0
+           :                 (-tmod +  3.0/6) * 6.0
+         :   tmod >= 2.0/6 ? (-tmod +  3.0/6) * 6.0
+           : tmod >= 1.0/6 ? 1.0
+           :                 ( tmod - 11.0/6) * 6.0;
+  }
+
+  inline double tsin(double const t)
+  { return sin(t * TAU) * (1.0 - trapezoidal_bias)
+         + trapezoid(t) * trapezoidal_bias; }
+
   inline double rotor_at    (double   const t)      const { return rotor_position + t*rotor_velocity; }
   inline double time_at     (uint64_t const cycles) const { return (double) cycles / CPU_HZ; }
 
