@@ -2,6 +2,7 @@
 #define MOTOR_H
 
 #include <cmath>
+#include <iostream>
 
 #include <stdint.h>
 
@@ -34,7 +35,7 @@ class motor
 public:
   // Time-variant state
   uint64_t cycles         = 0;                // CPU clock cycles
-  double rotor_position   = 0;                // absolute rotor turns
+  double rotor_position   = 0;                // absolute rotor turns (τ)
   double rotor_velocity   = 0;                // τ/sec
   double ab_current       = 0;                // A
   double ac_current       = 0;                // A
@@ -45,18 +46,16 @@ public:
 
   // Debugging
 #ifdef DEBUG
-  double transient_driven_ab;
-  double transient_driven_ac;
-  double transient_emf_ab;
-  double transient_emf_ac;
-  double transient_ohmic_ab;
-  double transient_ohmic_ac;
+  double transient_driven_ab = 0;
+  double transient_driven_ac = 0;
+  double transient_emf_ab    = 0;
+  double transient_emf_ac    = 0;
 
-  double transient_windage_torque;
-  double transient_friction_torque;
-  double transient_magnetic_torque;
+  double transient_windage_torque = 0;
+  double transient_friction_torque = 0;
+  double transient_magnetic_torque = 0;
 
-  double transient_d_velocity;
+  double transient_d_velocity = 0;
 #endif
 
   // Hardware parameters
@@ -92,19 +91,12 @@ public:
   double shunt_c_error    = 0;      // resistor bias: ohms/ohm
 
 
-  motor() {}
-
-  motor(double rotor_inertia_,
-        double phase_resistance_,
-        double phase_inductance_)
-    : rotor_inertia(rotor_inertia_),
-      phase_resistance(phase_resistance_),
-      phase_inductance(phase_inductance_) {}
+  motor(void) {}
 
 
   // Time stepping
-  void step();
-  inline double time() const { return time_at(cycles); }
+  void step(void);
+  inline double time(void) const { return time_at(cycles); }
 
   // Hardware functions
   inline void drive(double const a, double const b, double const c)
@@ -114,8 +106,8 @@ public:
     c_pwm = (uint16_t) (c * PWM_CLOCKS);
   }
 
-  uint16_t adc_shunt_b() const;
-  uint16_t adc_shunt_c() const;
+  uint16_t adc_shunt_b(void) const;
+  uint16_t adc_shunt_c(void) const;
 
   // Internal functions
   uint16_t adc_sample_of(double real_voltage) const;
@@ -145,6 +137,14 @@ public:
   inline double driven_ab_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vb_at(cycles); }
   inline double driven_ac_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vc_at(cycles); }
 };
+
+
+class motor_header_t {};
+motor_header_t const motor_header;
+
+std::ostream &operator<<(std::ostream &os, motor_header_t const &h);
+std::ostream &operator<<(std::ostream &os, motor const &m);
+
 
 }
 

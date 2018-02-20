@@ -6,6 +6,106 @@ namespace simulator
 {
 
 
+// std::ostream stuff
+std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
+{
+  return os << "cycles:#0\t"
+            << "time:#1\t"
+            << "rotor_position:#2\t"
+            << "rotor_velocity:#3\t"
+            << "ab_current:#4\t"
+            << "ac_current:#5\t"
+            << "a_pwm:#6\t"
+            << "b_pwm:#7\t"
+            << "c_pwm:#8\t"
+# ifdef DEBUG
+            << "transient_driven_ab:#9\t"
+            << "transient_driven_ac:#10\t"
+            << "transient_emf_ab:#11\t"
+            << "transient_emf_ac:#12\t"
+            << "transient_windage_torque:#13\t"
+            << "transient_friction_torque:#14\t"
+            << "transient_magnetic_torque:#15\t"
+            << "transient_d_velocity:#16\t"
+# endif
+            << "v33:#17\t"
+            << "vbus:#18\t"
+            << "vbus_divider:#19\t"
+            << "shunt_resistance:#20\t"
+            << "flux_linkage:#21\t"
+            << "pwm_cycle_time:#22\t"
+            << "rotor_inertia:#23\t"
+            << "trapezoidal_bias:#24\t"
+            << "rotor_windage:#25\t"
+            << "dynamic_friction:#26\t"
+            << "cogging_torque:#27\t"
+            << "phase_resistance:#28\t"
+            << "phase_inductance:#29\t"
+            << "shunt_amp_gain:#30\t"
+            << "adc_jitter:#31\t"
+            << "shunt_b_error:#32\t"
+            << "shunt_c_error:#33\t"
+            << "adc_shunt_b:#34\t"
+            << "adc_shunt_c:#35\t"
+            << "driven_va:#36\t"
+            << "driven_vb:#37\t"
+            << "driven_vc:#38\t"
+            << "driven_ab:#39\t"
+            << "driven_ac:#40\t"
+            << std::endl;
+}
+
+
+std::ostream &operator<<(std::ostream &os, motor const &m)
+{
+  return os << m.cycles         << "\t"
+            << m.time()         << "\t"
+            << m.rotor_position << "\t"
+            << m.rotor_velocity << "\t"
+            << m.ab_current     << "\t"
+            << m.ac_current     << "\t"
+            << m.a_pwm          << "\t"
+            << m.b_pwm          << "\t"
+            << m.c_pwm          << "\t"
+# ifdef DEBUG
+            << m.transient_driven_ab << "\t"
+            << m.transient_driven_ac << "\t"
+            << m.transient_emf_ab    << "\t"
+            << m.transient_emf_ac    << "\t"
+            << m.transient_windage_torque  << "\t"
+            << m.transient_friction_torque << "\t"
+            << m.transient_magnetic_torque << "\t"
+            << m.transient_d_velocity      << "\t"
+# endif
+            << m.v33              << "\t"
+            << m.vbus             << "\t"
+            << m.vbus_divider     << "\t"
+            << m.shunt_resistance << "\t"
+            << m.flux_linkage     << "\t"
+            << m.pwm_cycle_time   << "\t"
+            << m.rotor_inertia    << "\t"
+            << m.trapezoidal_bias << "\t"
+            << m.rotor_windage    << "\t"
+            << m.dynamic_friction << "\t"
+            << m.cogging_torque   << "\t"
+            << m.phase_resistance << "\t"
+            << m.phase_inductance << "\t"
+            << m.shunt_amp_gain   << "\t"
+            << m.adc_jitter       << "\t"
+            << m.shunt_b_error    << "\t"
+            << m.shunt_c_error    << "\t"
+            << m.adc_shunt_b()    << "\t"
+            << m.adc_shunt_c()    << "\t"
+            << m.driven_va_at(m.cycles) << "\t"
+            << m.driven_vb_at(m.cycles) << "\t"
+            << m.driven_vc_at(m.cycles) << "\t"
+            << m.driven_ab_at(m.cycles) << "\t"
+            << m.driven_ac_at(m.cycles) << "\t"
+            << std::endl;
+}
+
+
+// motor instance methods
 uint16_t motor::adc_shunt_b() const
 {
   return adc_sample_of(ab_current * shunt_resistance * shunt_amp_gain * (1.0 + shunt_b_error));
@@ -91,15 +191,6 @@ void motor::step()
 # ifdef DEBUG
     transient_emf_ab = emf_ab;
     transient_emf_ac = emf_ac;
-# endif
-
-  // Ohmic resistance (assumed to be constant per timestep)
-  double const ab_ohmic = phase_resistance * ab_current;
-  double const ac_ohmic = phase_resistance * ac_current;
-
-# ifdef DEBUG
-    transient_ohmic_ab = ab_ohmic;
-    transient_ohmic_ac = ac_ohmic;
 # endif
 
   // RK4 factors
