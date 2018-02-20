@@ -21,8 +21,11 @@ uint16_t motor::adc_sample_of(double const real_voltage) const
 {
   double const with_error = real_voltage
                           + ((double) random() / RAND_MAX - 0.5) * adc_jitter;
-  uint16_t measured = (uint16_t) (with_error / v33 * 4096 + 0.5);
-  return measured < 0 ? 0 : measured > 4095 ? 4095 : measured;
+
+  // NB: keep it signed until we clip; otherwise we'll introduce wrapping
+  // errors, which the hardware certainly doesn't have.
+  int16_t measured = (int16_t) (with_error / v33 * 4096 + 0.5);
+  return (uint16_t) (measured < 0 ? 0 : measured > 4095 ? 4095 : measured);
 }
 
 
@@ -116,7 +119,8 @@ void motor::step()
   double const beta_current  = -sqrt(3) * b_current + sqrt(3) * c_current;
 
   double const magnetic_torque =
-    flux_linkage * (alpha_current * q_alpha + beta_current * q_beta);
+    (alpha_current * q_alpha + beta_current * q_beta)   /* A */
+    / flux_linkage;                                     /* * N·m/A = N·m */
 
   double const net_torque = magnetic_torque - windage_torque - friction_torque;
 

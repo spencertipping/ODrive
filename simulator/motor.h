@@ -106,17 +106,16 @@ public:
   // Internal functions
   uint16_t adc_sample_of(double real_voltage) const;
 
-  // (partially-)trapezoidal sine
   inline double trapezoid(double const t)
   {
     double const tmod = std::fmod(t, 1.0);
-    return tmod   >= 3.0/6 ?
-             tmod >= 5.0/6 ? ( tmod - 11.0/6) * 6.0
-           : tmod >= 4.0/6 ? -1.0
-           :                 (-tmod +  3.0/6) * 6.0
-         :   tmod >= 2.0/6 ? (-tmod +  3.0/6) * 6.0
-           : tmod >= 1.0/6 ? 1.0
-           :                 ( tmod - 11.0/6) * 6.0;
+
+    return tmod < 1.0/6 ?  tmod * 6
+         : tmod < 2.0/6 ?  1
+         : tmod < 3.0/6 ?  1 - (tmod - 2.0/6) * 6
+         : tmod < 4.0/6 ?  0 - (tmod - 3.0/6) * 6
+         : tmod < 5.0/6 ? -1
+         :                -1 + (tmod - 5.0/6) * 6;
   }
 
   inline double tsin(double const t)
