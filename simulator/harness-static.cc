@@ -15,8 +15,8 @@ int main()
   // print header row
   cout << motor_header;
 
-  // run for 10ms of simulated time, 200 clock cycles between printouts
-  while (m.time() < 0.01)
+  // run for 500ms of simulated time, 200 clock cycles between printouts
+  while (m.time() < 0.5)
   {
     cout << m;
     for (int i = 0; i < 100; ++i) m.step();

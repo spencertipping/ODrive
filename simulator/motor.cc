@@ -178,10 +178,18 @@ void motor::step()
   // ab_current is inflow through A + outflow through B. Mathematically, then,
   // ab_current = a_current - b_current.
   double const rotor_turns = rotor_at(t);
-  double const q_alpha     = tsin(rotor_turns);
-  double const q_beta      = tsin(rotor_turns + 0.25);
+  double const q_alpha_un  = tsin(rotor_turns);
+  double const q_beta_un   = tsin(rotor_turns + 0.25);
 
-  double const emf_mag = rotor_velocity * TAU * flux_linkage;   // V
+  // Normalize the quadrature coordinates
+  double const q_norm  = 1.0 / sqrt(q_alpha_un*q_alpha_un + q_beta_un*q_beta_un);
+  double const q_alpha = q_alpha_un * q_norm;
+  double const q_beta  = q_beta_un * q_norm;
+
+  double const emf_mag = rotor_velocity /* turns/s */
+                       * TAU            /* * rad/turn = rad/s */
+                       * flux_linkage;  /* * V/(rad/s) = V */
+
   double const q_dot_a = q_alpha;
   double const q_dot_b = -0.5 * q_alpha - sqrt(3)/2 * q_beta;
   double const q_dot_c = -0.5 * q_alpha + sqrt(3)/2 * q_beta;
@@ -221,16 +229,32 @@ void motor::step()
 
   // The flux linkage works both ways: here we use it to convert from
   // quadrature-aligned amps to N·m.
+  //
+  // Sanity check on these definitions:
+  //
+  //   A + B + C = 0
+  //
+  //   A =  AB + AC
+  //   B = -AB + BC
+  //   C = -AC - BC
+  //
+  // We can set BC = 0 because coil A can act as a virtual join point, in this
+  // case netting no current. So we have:
+  //
+  //   A = AB + AC
+  //   B = -AB
+  //   C = -AC
+
   double const a_current = mean_ab_current + mean_ac_current;
-  double const b_current = mean_ab_current - a_current;
-  double const c_current = mean_ac_current - a_current;
+  double const b_current = -mean_ab_current;
+  double const c_current = -mean_ac_current;
 
   double const alpha_current = a_current - 0.5 * (b_current + c_current);
   double const beta_current  = -sqrt(3) * b_current + sqrt(3) * c_current;
 
   double const magnetic_torque =
-    (alpha_current * q_alpha + beta_current * q_beta)   /* A */
-    / flux_linkage;                                     /* * N·m/A = N·m */
+    (alpha_current * q_alpha + beta_current * q_beta)   /* quadrature A */
+    * flux_linkage;                                     /* * N·m/A = N·m */
 
 # ifdef DEBUG
     transient_windage_torque  = windage_torque;
@@ -244,7 +268,8 @@ void motor::step()
   // Euler's method, except for the rotor position which is trapezoidal.
   double const d_velocity = net_torque      /* N·m = kg m²/s² */
                           * dt              /* * s = kg m²/s */
-                          / rotor_inertia;  /* / kg m² = 1/s = τ/s */
+                          / rotor_inertia   /* / kg m² = 1/s (implied radians) */
+                          / TAU;            /* / rad/turn = turns/s */
 
 # ifdef DEBUG
     transient_d_velocity = d_velocity;
