@@ -78,6 +78,8 @@ public:
   double shunt_c_error    = 0;      // resistor bias: ohms/ohm
 
 
+  motor() {}
+
   motor(double rotor_inertia_,
         double phase_resistance_,
         double phase_inductance_)

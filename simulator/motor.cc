@@ -20,7 +20,7 @@ uint16_t motor::adc_shunt_c() const
 uint16_t motor::adc_sample_of(double const real_voltage) const
 {
   double const with_error = real_voltage
-                          + ((double) rand() / RAND_MAX - 0.5) * adc_jitter;
+                          + ((double) random() / RAND_MAX - 0.5) * adc_jitter;
   uint16_t measured = (uint16_t) (with_error / v33 * 4096 + 0.5);
   return measured < 0 ? 0 : measured > 4095 ? 4095 : measured;
 }
@@ -69,13 +69,12 @@ void motor::step()
   double const q_alpha     = tsin(rotor_turns);
   double const q_beta      = tsin(rotor_turns + 0.25);
 
-  // TODO: the below dot products don't look right; how do we get 1.5α total?
-  // Do we need to model emf_bc?
   double const emf_mag = rotor_velocity * TAU * flux_linkage;
-  double const emf_ab =
-    emf_mag * (q_alpha - (-0.5 * q_alpha + -sqrt(3)/2.0 * q_beta));
-  double const emf_ac =
-    emf_mag * (q_alpha - (-0.5 * q_alpha +  sqrt(3)/2.0 * q_beta));
+  double const q_dot_a = q_alpha;
+  double const q_dot_b = -0.5 * q_alpha - sqrt(3)/2 * q_beta;
+  double const q_dot_c = -0.5 * q_alpha + sqrt(3)/2 * q_beta;
+  double const emf_ab  = emf_mag * (q_dot_a - q_dot_b);
+  double const emf_ac  = emf_mag * (q_dot_a - q_dot_c);
 
   // Ohmic resistance (assumed to be constant per timestep)
   double const ab_ohmic = phase_resistance * ab_current;
@@ -100,14 +99,39 @@ void motor::step()
   // Step 2: calculate net force acting on the rotor. This consists of cogging
   // torque (TODO), dynamic friction, and windage losses, plus the magnetic
   // field.
-  double const windage_torque  = rotor_windage    * rotor_velocity * rotor_velocity;
+  //
+  // These two resistive factors always apply against the current velocity
+  // direction, so they need to have the same sign as the velocity. We subtract
+  // them in the net torque calculation below.
+  double const windage_torque  = rotor_windage    * rotor_velocity * fabs(rotor_velocity);
   double const friction_torque = dynamic_friction * rotor_velocity;
 
   // The flux linkage works both ways: here we use it to convert from
   // quadrature-aligned amps to N·m.
-  // TODO
-}
+  double const a_current = mean_ab_current + mean_ac_current;
+  double const b_current = mean_ab_current - a_current;
+  double const c_current = mean_ac_current - a_current;
 
+  double const alpha_current = a_current - 0.5 * (b_current + c_current);
+  double const beta_current  = -sqrt(3) * b_current + sqrt(3) * c_current;
+
+  double const magnetic_torque =
+    flux_linkage * (alpha_current * q_alpha + beta_current * q_beta);
+
+  double const net_torque = magnetic_torque - windage_torque - friction_torque;
+
+  // Now update the simulator state. These integrals are all evaluated using
+  // Euler's method, except for the rotor position which is trapezoidal.
+  double const d_velocity = net_torque      /* kg m²/s² */
+                          * dt              /* * s = kg m²/s */
+                          / rotor_inertia;  /* / kg m²/s = unit */
+
+  rotor_position += dt * (rotor_velocity + d_velocity / 2);
+  rotor_velocity += d_velocity;
+  cycles         += dc;
+  ab_current     += d_ab_current;
+  ac_current     += d_ac_current;
+}
 
 
 }
