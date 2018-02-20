@@ -20,10 +20,8 @@ namespace simulator
 
 #define ROTOR_WEIGHT (100 / 1000.0) // kg
 #define ROTOR_RADIUS (12  / 1000.0) // m
-#define ROTOR_LENGTH (40  / 1000.0) // m
 
-#define ROTOR_INERTIA \
-  (0.5 * ROTOR_RADIUS*ROTOR_RADIUS * ROTOR_WEIGHT * ROTOR_LENGTH)
+#define ROTOR_INERTIA (0.5 * ROTOR_RADIUS*ROTOR_RADIUS * ROTOR_WEIGHT)
 
 // NB: I use τ as a unit of measure equal to one turn.
 #define TAU (2.0 * M_PI)            // radians per turn
@@ -45,6 +43,18 @@ public:
   uint16_t b_pwm          = 4096;             // number of cycles
   uint16_t c_pwm          = 4096;             // number of cycles
 
+  // Debugging
+#ifdef DEBUG
+  double transient_emf_ab;
+  double transient_emf_ac;
+
+  double transient_windage_torque;
+  double transient_friction_torque;
+  double transient_magnetic_torque;
+
+  double transient_d_velocity;
+#endif
+
   // Hardware parameters
   double v33              = 3.3;              // V
   double vbus             = 12;               // V
@@ -62,7 +72,7 @@ public:
   double flux_linkage     = 5.51328895422 / (MOTOR_KV * MOTOR_POLE_PAIRS);
 
   double pwm_cycle_time   = PWM_CYCLE;        // seconds
-  double rotor_inertia    = ROTOR_INERTIA;    // kg·m²/sec
+  double rotor_inertia    = ROTOR_INERTIA;    // kg·m²
   double trapezoidal_bias = 0.7;              // interpolation factor
 
   double rotor_windage    = 1e-4;             // N·m / (τ²/s)
@@ -109,7 +119,6 @@ public:
   inline double trapezoid(double const t)
   {
     double const tmod = std::fmod(t, 1.0);
-
     return tmod < 1.0/6 ?  tmod * 6
          : tmod < 2.0/6 ?  1
          : tmod < 3.0/6 ?  1 - (tmod - 2.0/6) * 6

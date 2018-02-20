@@ -68,6 +68,10 @@ void motor::step()
   // NB: this math looks wrong, but it isn't: we actually observe a trapezoidal
   // waveform from the coils with a lot of motors, so using the trapezoidal sine
   // function directly against the quadrature should give us the unscaled EMF.
+  //
+  // NB: all currents are modeled in terms of inflow through a coil, which means
+  // ab_current is inflow through A + outflow through B. Mathematically, then,
+  // ab_current = a_current - b_current.
   double const rotor_turns = rotor_at(t);
   double const q_alpha     = tsin(rotor_turns);
   double const q_beta      = tsin(rotor_turns + 0.25);
@@ -78,6 +82,12 @@ void motor::step()
   double const q_dot_c = -0.5 * q_alpha + sqrt(3)/2 * q_beta;
   double const emf_ab  = emf_mag * (q_dot_a - q_dot_b);
   double const emf_ac  = emf_mag * (q_dot_a - q_dot_c);
+
+  // Log some transients for debugging purposes
+# ifdef DEBUG
+    transient_emf_ab = emf_ab;
+    transient_emf_ac = emf_ac;
+# endif
 
   // Ohmic resistance (assumed to be constant per timestep)
   double const ab_ohmic = phase_resistance * ab_current;
@@ -122,13 +132,23 @@ void motor::step()
     (alpha_current * q_alpha + beta_current * q_beta)   /* A */
     / flux_linkage;                                     /* * N·m/A = N·m */
 
+# ifdef DEBUG
+    transient_windage_torque  = windage_torque;
+    transient_friction_torque = friction_torque;
+    transient_magnetic_torque = magnetic_torque;
+# endif
+
   double const net_torque = magnetic_torque - windage_torque - friction_torque;
 
   // Now update the simulator state. These integrals are all evaluated using
   // Euler's method, except for the rotor position which is trapezoidal.
-  double const d_velocity = net_torque      /* kg m²/s² */
+  double const d_velocity = net_torque      /* N·m = kg m²/s² */
                           * dt              /* * s = kg m²/s */
-                          / rotor_inertia;  /* / kg m²/s = unit */
+                          / rotor_inertia;  /* / kg m² = 1/s = τ/s */
+
+# ifdef DEBUG
+    transient_d_velocity = d_velocity;
+# endif
 
   rotor_position += dt * (rotor_velocity + d_velocity / 2);
   rotor_velocity += d_velocity;
