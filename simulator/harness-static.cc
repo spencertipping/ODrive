@@ -15,9 +15,19 @@ int main()
   m.drive(0.7, 0, 0);           // ab = ac, drive A high
 
   // print header row
-  cout << "t\trotor_pos\trotor_vel\tab_current\t"
-       << "ac_current\tshunt_b\tshunt_c\temf_ab\t"
-       << "windage\tfriction\tmagnetic_torque\n"
+  cout << "t\t"
+       << "rotor_pos\t"
+       << "rotor_vel\t"
+       << "ab_current\t"
+       << "ac_current\t"
+       << "shunt_b\t"
+       << "shunt_c\t"
+       << "driven_ab\t"
+       << "emf_ab\t"
+       << "ohmic_ab\t"
+       << "windage\t"
+       << "friction\t"
+       << "magnetic_torque\t"
        << endl;
 
   // run for 10ms of simulated time
@@ -31,7 +41,9 @@ int main()
          << m.ac_current     << "\t"
          << m.adc_shunt_b()  << "\t"
          << m.adc_shunt_c()  << "\t"
+         << m.transient_driven_ab       << "\t"
          << m.transient_emf_ab          << "\t"
+         << m.transient_ohmic_ab        << "\t"
          << m.transient_windage_torque  << "\t"
          << m.transient_friction_torque << "\t"
          << m.transient_magnetic_torque << "\t"

@@ -45,8 +45,12 @@ public:
 
   // Debugging
 #ifdef DEBUG
+  double transient_driven_ab;
+  double transient_driven_ac;
   double transient_emf_ab;
   double transient_emf_ac;
+  double transient_ohmic_ab;
+  double transient_ohmic_ac;
 
   double transient_windage_torque;
   double transient_friction_torque;

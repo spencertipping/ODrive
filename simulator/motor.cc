@@ -64,6 +64,11 @@ void motor::step()
   double const ac_drive_t1 = driven_ac_at(cycles + dc/2);
   double const ac_drive_t2 = driven_ac_at(cycles + dc);
 
+# ifdef DEBUG
+    transient_driven_ab = ab_drive_t0;
+    transient_driven_ac = ac_drive_t0;
+# endif
+
   // Back-EMF (assumed to be constant within each timestep)
   // NB: this math looks wrong, but it isn't: we actually observe a trapezoidal
   // waveform from the coils with a lot of motors, so using the trapezoidal sine
@@ -76,14 +81,13 @@ void motor::step()
   double const q_alpha     = tsin(rotor_turns);
   double const q_beta      = tsin(rotor_turns + 0.25);
 
-  double const emf_mag = rotor_velocity * TAU * flux_linkage;
+  double const emf_mag = rotor_velocity * TAU * flux_linkage;   // V
   double const q_dot_a = q_alpha;
   double const q_dot_b = -0.5 * q_alpha - sqrt(3)/2 * q_beta;
   double const q_dot_c = -0.5 * q_alpha + sqrt(3)/2 * q_beta;
   double const emf_ab  = emf_mag * (q_dot_a - q_dot_b);
   double const emf_ac  = emf_mag * (q_dot_a - q_dot_c);
 
-  // Log some transients for debugging purposes
 # ifdef DEBUG
     transient_emf_ab = emf_ab;
     transient_emf_ac = emf_ac;
@@ -92,6 +96,11 @@ void motor::step()
   // Ohmic resistance (assumed to be constant per timestep)
   double const ab_ohmic = phase_resistance * ab_current;
   double const ac_ohmic = phase_resistance * ac_current;
+
+# ifdef DEBUG
+    transient_ohmic_ab = ab_ohmic;
+    transient_ohmic_ac = ac_ohmic;
+# endif
 
   // RK4 factors
   double const ab_didt_k1 = ab_drive_t0 - emf_ab - ab_current * phase_resistance;
