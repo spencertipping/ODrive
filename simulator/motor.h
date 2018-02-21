@@ -13,6 +13,9 @@ namespace simulator
 {
 
 
+static real const sqrt3_2 = sqrt(r(3)) / 2;
+
+
 class motor_parameters
 {
 public:
@@ -80,12 +83,9 @@ public:
          + trapezoid(phase) * trapezoidal_bias; }
 
 
-  // Stator geometry (normalized Clarke transform)
-  inline real i_alpha(real const a, real const b, real const c) const
-  { return r(3.0/2) * (a - (b + c) / 2); }
-
-  inline real i_beta (real const a, real const b, real const c) const
-  { return r(3.0/2) * (sqrt(r(3))/2 * b - sqrt(r(3))/2 * c); }
+  // Stator geometry
+  inline real i_alpha(real const a, real const b, real const c) const { return a - (b + c) / 2; }
+  inline real i_beta (real const a, real const b, real const c) const { return sqrt3_2 * b - sqrt3_2 * c; }
 
 
   // Rotor geometry
@@ -97,31 +97,16 @@ public:
   inline real q_dot_beta (real const phase) const { return tsin(phase + r(0.25));  }
 
   inline real q_dot_a(real const phase) const { return q_dot_alpha(phase); }
-  inline real q_dot_b(real const phase) const { return q_dot_alpha(phase)/2 + sqrt(r(3))/2 * q_dot_beta(phase); }
-  inline real q_dot_c(real const phase) const { return q_dot_alpha(phase)/2 - sqrt(r(3))/2 * q_dot_beta(phase); }
+  inline real q_dot_b(real const phase) const { return q_dot_alpha(phase)/2 + sqrt3_2 * q_dot_beta(phase); }
+  inline real q_dot_c(real const phase) const { return q_dot_alpha(phase)/2 - sqrt3_2 * q_dot_beta(phase); }
 
   inline real magnetic_torque(real const phase, real const ab, real const ac) const
   {
-    let a =  ab + ac;                   // A
-    let b = -ab;                        // A
-    let c = -ac;                        // A
-
-    let iq = i_alpha(a, b, c) * q_dot_alpha(phase)
-           + i_beta(a, b, c)  * q_dot_beta(phase);
-
-    // This page explains the 3/4 factor; the gist is that it's a result of the
-    // scale-invariant Clarke transform I use above.
-    //
-    // https://e2e.ti.com/support/microcontrollers/c2000/f/902/p/298101/1044389#1044389
-    //
-    // Torque (Newton-Meters) = Rotor Flux (Webers = Volt-seconds/radian)
-    //                        * Iq (Amps)
-    //                        * Rotor Magnet Poles
-    //                        * (3/4)
-    //
-    // NB: rotor flux = kT / pole_pairs
-
-    return kt * iq * 2 * r(0.75);
+    let a =  ab + ac;
+    let b = -ab;
+    let c = -ac;
+    return kt * (i_alpha(a, b, c) * q_dot_alpha(phase)
+               + i_beta(a, b, c)  * q_dot_beta(phase));
   }
 };
 
@@ -218,7 +203,7 @@ public:
     let mean_current     = mid_iab + mid_iac;
     let voltage_drop     = mean_current * r;
     let resistive_joules = mean_current * voltage_drop * dt;
-    let core_joules      = fabs(ab_di) + fabs(ac_di);
+    let core_joules      = p->hysteresis_loss * (fabs(ab_di) + fabs(ac_di));
 
     // Net rotor torque
     let windage_torque   = p->windage_loss  * rotor_velocity * fabs(rotor_velocity);

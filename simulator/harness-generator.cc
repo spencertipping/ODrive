@@ -6,6 +6,9 @@ using namespace std;
 using namespace simulator;
 
 
+// FIXME: this oscillates right now, but it should be critically damped and
+// should end up in a nonzero position.
+
 int main()
 {
   motor m(c580l);
@@ -13,6 +16,7 @@ int main()
 
   cout << "time\t"
        << motor_header << "\t"
+       << "bemf_ab\t"
        << endl;
 
   // Let the rotor coast and generate some power
@@ -21,6 +25,7 @@ int main()
   {
     cout << t << "\t"
          << m << "\t"
+         << m.bemf_ab(0) << "\t"
          << endl;
     for (int i = 0; i < 100; ++i, t += dt) m.step(dt, 0, 0, 0);
   }

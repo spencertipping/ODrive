@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "defines.h"
+
 #include "motor.h"
 
 
@@ -56,7 +57,7 @@ public:
   inline real     time_at  (uint64_t const c) const { return (real) c / cpu_hz; }
   inline uint16_t pwm_clock(uint64_t const c) const { return c % pwm_clocks; }
 
-  uint16_t adc_read(real const real_voltage) const
+  inline uint16_t adc_read(real const real_voltage) const
   {
     // A note about the 4* on the error term. The error is with respect to the
     // full ADC range, which is 0-3.3v, and has units expected(volts per volt).
@@ -129,31 +130,40 @@ public:
 
 
   // FET drives
-  real driven_va_at(uint64_t const c) const { return p->pwm_clock(c) < a_pwm ? vbus : 0; }
-  real driven_vb_at(uint64_t const c) const { return p->pwm_clock(c) < b_pwm ? vbus : 0; }
-  real driven_vc_at(uint64_t const c) const { return p->pwm_clokc(c) < c_pwm ? vbus : 0; }
+  inline real driven_va_at(uint64_t const c) const { return p->pwm_clock(c) < a_pwm ? vbus : 0; }
+  inline real driven_vb_at(uint64_t const c) const { return p->pwm_clock(c) < b_pwm ? vbus : 0; }
+  inline real driven_vc_at(uint64_t const c) const { return p->pwm_clock(c) < c_pwm ? vbus : 0; }
 
-  real driven_ab_at(uint64_t const c) const { return driven_va_at(c) - driven_vb_at(c); }
-  real driven_ac_at(uint64_t const c) const { return driven_va_at(c) - driven_vc_at(c); }
+  inline real driven_ab_at(uint64_t const c) const { return driven_va_at(c) - driven_vb_at(c); }
+  inline real driven_ac_at(uint64_t const c) const { return driven_va_at(c) - driven_vc_at(c); }
 
-  void drive(real const a, real const b, real const c)
+  inline void drive(real const a, real const b, real const c)
   {
     a_pwm = (uint16_t) (a * PWM_CLOCKS);
     b_pwm = (uint16_t) (b * PWM_CLOCKS);
     c_pwm = (uint16_t) (c * PWM_CLOCKS);
   }
 
+  void step(uint64_t const dc)
+  {
+    let dt = p->t_at(dc) - p->t_at(0);
+
+    // TODO: joule heating for FETs, simulate shunt amp RC filters
+    m->step(dt, driven_ab_at(cycles), driven_ac_at(cycles));
+    cycles += dc;
+  }
+
 
   // ADC readings
-  real amplified_shunt_b(void) const;
-  real amplified_shunt_c(void) const;
+  inline real amplified_shunt_b(void) const { return m->ib() * p->shunt_resistance * p->shunt_amp_gain; }
+  inline real amplified_shunt_c(void) const { return m->ic() * p->shunt_resistance * p->shunt_amp_gain; }
 
-  uint16_t adc_shunt_b(void) const;
-  uint16_t adc_shunt_c(void) const;
+  inline uint16_t adc_shunt_b(void) const { return p->adc_read(amplified_shunt_b()); }
+  inline uint16_t adc_shunt_c(void) const { return p->adc_read(amplified_shunt_c()); }
 
 
   // Thermal modeling (simplistic steady-state linear)
-  real fet_temperature(real const joules) const
+  inline real fet_temperature(real const joules) const
   { return cycles ? joules / p->time_at(cycles) * p->fet_thermal_resistance : 0; }
 };
 
