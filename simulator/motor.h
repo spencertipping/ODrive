@@ -9,6 +9,12 @@
 #include "defines.h"
 
 
+// TODO
+// Redo all of the vector math here. Just use two phases, B and C, and let A be
+// implied. Then calculate flux in α/β terms and back-transform to get coil
+// EMFs.
+
+
 namespace simulator
 {
 
