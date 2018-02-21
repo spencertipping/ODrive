@@ -102,6 +102,10 @@ public:
   inline real q_dot_alpha(real const p) const { return tsin(p + r(0.25)); }
   inline real q_dot_beta (real const p) const { return tsin(p + r(0.5));  }
 
+  inline real q_dot_a(real const p) const { return q_dot_alpha(p); }
+  inline real q_dot_b(real const p) const { return -0.5 * q_dot_alpha(p) + sqrt(r(3))/2 * q_dot_beta(p); }
+  inline real q_dot_c(real const p) const { return -0.5 * q_dot_alpha(p) - sqrt(r(3))/2 * q_dot_beta(p); }
+
   inline real magnetic_torque(real const p, real const ab, real const ac) const
   {
     let a = ab + ac;                    // A
@@ -143,80 +147,57 @@ motor_parameters const turnigy_c580l(
   r(1 * MILLI));                        // cogging torque
 
 
+// Time-variant motor state
 class motor
 {
 public:
-  // Time-variant state
-  double rotor_position   = 0;                // absolute rotor turns (τ)
-  double rotor_velocity   = 0;                // τ/sec
-  double ab_current       = 0;                // A
-  double ac_current       = 0;                // A
+  real rotor_position = 0;              // absolute rotor turns
+  real rotor_velocity = 0;              // turns/sec
+  real ab_current     = 0;              // A
+  real ac_current     = 0;              // A
 
-  // Debugging
-#ifdef DEBUG
-  double transient_driven_ab = 0;
-  double transient_driven_ac = 0;
-  double transient_emf_ab    = 0;
-  double transient_emf_ac    = 0;
+  real stator_joules  = 0;              // J (electrical/core losses)
+  real dynamic_joules = 0;              // J (friction losses)
 
-  double transient_windage_torque = 0;
-  double transient_friction_torque = 0;
-  double transient_magnetic_torque = 0;
-
-  double transient_d_velocity = 0;
-#endif
-
-  // NB: these parameters are unusual in that they don't follow the ideal
-  // three-phase model; they instead model the common BLDC configuration that
-  // involves multiple pole-cycles per revolution. I'm not modeling actual
-  // revolutions anywhere in the code; these quantities are converted to the
-  // ideal three-phase model.
-  //
-  // flux_linkage is measured in peak V / (rad/sec); this also serves as the
-  // motor's torque constant (N·m / quadrature amp).
-  double flux_linkage     = 5.51328895422 / (MOTOR_KV * MOTOR_POLE_PAIRS);
-
-  double rotor_inertia    = ROTOR_INERTIA;    // kg·m²
-  double trapezoidal_bias = 0.7;              // interpolation factor
-
-  double rotor_windage    = 1e-4;             // N·m / (τ²/s)
-  double dynamic_friction = 1e-5;             // N·m / (τ/s)
-  double cogging_torque   = 0.01;             // N·m
-  double phase_resistance = 0.2;              // ohms
-  double phase_inductance = 0.0005;           // henries
+  motor_parameters const *p;
 
 
-  motor(void) {}
+  motor(motor_parameters const *const p_) : p(p_) {}
 
 
-  // Time stepping
-  void step(void);
-  inline double time(void) const { return time_at(cycles); }
+  // Coil properties
+  inline real ia(void) const { return ab_current + ac_current; }
+  inline real ib(void) const { return -ab_current; }
+  inline real ic(void) const { return -ac_current; }
 
-  // Hardware functions
-  inline void drive(double const a, double const b, double const c)
+
+  // Rotor positioning
+  inline real pos_at(real const t) const { return rotor_position + t*rotor_velocity; }
+
+
+  // Back-EMF
+  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * kt; }
+  inline real bemf_ab(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_b(pos_at(t))); }
+  inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_c(pos_at(t))); }
+
+
+  // Time stepping: assume constant drive voltage over a timestep, and return
+  // joules of mechanical output
+  real step(real const dt, real const va, real const vb, real const vc)
   {
-    a_pwm = (uint16_t) (a * PWM_CLOCKS);
-    b_pwm = (uint16_t) (b * PWM_CLOCKS);
-    c_pwm = (uint16_t) (c * PWM_CLOCKS);
+    let vab = va - vb;
+    let vac = va - vc;
+
+    // Integrate coil currents with RK4
+    let ab_bemf_t0  = bemf_ab(0);
+    let ac_bemf_t0  = bemf_ac(0);
+    let ab_bemf_t12 = bemf_ab(dt/2);
+    let ac_bemf_t12 = bemf_ac(dt/2);
+    let ab_bemf_t1  = bemf_ab(dt);
+    let ac_bemf_t1  = bemf_ac(dt);
+
+    // TODO
   }
-
-  uint16_t adc_shunt_b(void) const;
-  uint16_t adc_shunt_c(void) const;
-
-  // Internal functions
-  uint16_t adc_sample_of(double real_voltage) const;
-
-
-  inline double rotor_at    (double   const t)      const { return rotor_position + t*rotor_velocity; }
-  inline double time_at     (uint64_t const cycles) const { return (double) cycles / CPU_HZ; }
-
-  inline double driven_va_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < a_pwm ? vbus : 0; }
-  inline double driven_vb_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < b_pwm ? vbus : 0; }
-  inline double driven_vc_at(uint64_t const cycles) const { return (cycles & PWM_CLOCKS - 1) < c_pwm ? vbus : 0; }
-
-  inline double driven_ab_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vb_at(cycles); }
-  inline double driven_ac_at(uint64_t const cycles) const { return driven_va_at(cycles) - driven_vc_at(cycles); }
 };
 
 
