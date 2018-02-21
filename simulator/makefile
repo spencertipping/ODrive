@@ -1,4 +1,5 @@
-ALL: harness-static test-tsin
+ALL: harness-static harness-generator harness-zero \
+     test-tsin test-backemf
 
 LIB_FILES = board.h motor.h makefile
 CC_OPTS = -DDEBUG -O2 -g -std=c++11 -Wall -Wno-parentheses

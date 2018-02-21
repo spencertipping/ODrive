@@ -9,11 +9,12 @@ using namespace simulator;
 int main()
 {
   motor m(c580l);
-  m.rotor_position = 0.2;       // not evenly cogged; we want it to move
+  m.rotor_position = 0;       // cog directly to zero
 
   // print header row
   cout << "time\t"
        << motor_header << "\t"
+       << "mag_torque\t"
        << "bemf_ab\t"
        << endl;
 
@@ -22,8 +23,10 @@ int main()
   {
     cout << t << "\t"
          << m << "\t"
+         << m.p->magnetic_torque(m.phase_at(0), m.iab, m.iac) << "\t"
          << m.bemf_ab(0) << "\t"
          << endl;
+
     for (int i = 0; i < 100; ++i, t += dt) m.step(dt, 1, 0, 0);
   }
 

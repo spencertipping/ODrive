@@ -23,13 +23,10 @@ public:
 
   real phase_resistance;              // ohms
   real phase_inductance;              // henries
-  real a_inductance_error;            // henries/henry
-  real b_inductance_error;            // henries/henry
-  real c_inductance_error;            // henries/henry
   real saliency;                      // D henries / Q henries
   real trapezoidal_bias;              // interpolation factor
 
-  real hysteresis_loss;               // J/ΔA
+  real hysteresis_loss;               // J/ΔA = V
   real windage_loss;                  // N·m/(turn/sec)²
   real friction_loss;                 // N·m/(turn/sec)
   real cogging_torque;                // N·m?
@@ -42,9 +39,6 @@ public:
                    real const kv_,              // RPM/V
                    real const phase_resistance_,
                    real const phase_inductance_,
-                   real const a_inductance_error_,
-                   real const b_inductance_error_,
-                   real const c_inductance_error_,
                    real const saliency_,
                    real const trapezoidal_bias_,
                    real const hysteresis_loss_,
@@ -54,15 +48,12 @@ public:
     : name         (name_),
       pole_pairs   (pole_pairs_),
       rotor_inertia(rotor_weight_ * MILLI * (rotor_radius_ * MILLI)
-                                          * (rotor_radius_ * MILLI)),
+                                          * (rotor_radius_ * MILLI) / 2),
 
-      kt(9.5492966 / kv_),    // units -t 'V/rpm' 'N*m/A' -> 9.5492966
+      kt(9.5492966 / kv_),    // $ units -t 'V/rpm' 'N*m/A' -> 9.5492966
 
       phase_resistance(phase_resistance_),
       phase_inductance(phase_inductance_),
-      a_inductance_error(a_inductance_error_),
-      b_inductance_error(b_inductance_error_),
-      c_inductance_error(c_inductance_error_),
       saliency(saliency_),
       trapezoidal_bias(trapezoidal_bias_),
 
@@ -91,27 +82,27 @@ public:
 
   // Stator geometry (normalized Clarke transform)
   inline real i_alpha(real const a, real const b, real const c) const
-  { return r(2.0/3) * (a - (b + c) / 2); }
+  { return r(3.0/2) * (a - (b + c) / 2); }
 
   inline real i_beta (real const a, real const b, real const c) const
-  { return r(2.0/3) * (sqrt(r(3)) * b - sqrt(r(3)) * c); }
+  { return r(3.0/2) * (sqrt(r(3))/2 * b - sqrt(r(3))/2 * c); }
 
 
   // Rotor geometry
   // TODO: with trapezoidal sin(), these vector components may not norm to 1.
   // How much of a problem is this?
-  inline real d_dot_alpha(real const phase) const { return tsin(phase);           }
-  inline real d_dot_beta (real const phase) const { return tsin(phase + r(0.25)); }
-  inline real q_dot_alpha(real const phase) const { return tsin(phase + r(0.25)); }
-  inline real q_dot_beta (real const phase) const { return tsin(phase + r(0.5));  }
+  inline real d_dot_alpha(real const phase) const { return tsin(phase - r(0.25));           }
+  inline real d_dot_beta (real const phase) const { return tsin(phase); }
+  inline real q_dot_alpha(real const phase) const { return tsin(phase); }
+  inline real q_dot_beta (real const phase) const { return tsin(phase + r(0.25));  }
 
   inline real q_dot_a(real const phase) const { return q_dot_alpha(phase); }
-  inline real q_dot_b(real const phase) const { return -0.5 * q_dot_alpha(phase) + sqrt(r(3))/2 * q_dot_beta(phase); }
-  inline real q_dot_c(real const phase) const { return -0.5 * q_dot_alpha(phase) - sqrt(r(3))/2 * q_dot_beta(phase); }
+  inline real q_dot_b(real const phase) const { return q_dot_alpha(phase)/2 + sqrt(r(3))/2 * q_dot_beta(phase); }
+  inline real q_dot_c(real const phase) const { return q_dot_alpha(phase)/2 - sqrt(r(3))/2 * q_dot_beta(phase); }
 
   inline real magnetic_torque(real const phase, real const ab, real const ac) const
   {
-    let a = ab + ac;                    // A
+    let a =  ab + ac;                   // A
     let b = -ab;                        // A
     let c = -ac;                        // A
 
@@ -127,8 +118,10 @@ public:
     //                        * Iq (Amps)
     //                        * Rotor Magnet Poles
     //                        * (3/4)
+    //
+    // NB: rotor flux = kT / pole_pairs
 
-    return kt * iq * pole_pairs * 2 * r(0.75);
+    return kt * iq * 2 * r(0.75);
   }
 };
 
@@ -141,12 +134,11 @@ motor_parameters const c580l("turnigy C580L 580Kv",
   580,                                  // RPM/V
   2 * MILLI,                            // phase resistance
   250 * MICRO,                          // phase inductance
-  0, 0, 0,                              // phase inductance errors
-  0,                                    // saliency
+  0,                                    // saliency (TODO)
   r(0.8),                               // trapezoidal bias (TODO: measure)
   0,                                    // hysteresis loss
-  0,                                    // windage loss
-  r(10 * MICRO),                        // friction loss
+  r(10 * MICRO),                        // windage loss
+  r(10 * MILLI),                        // friction loss
   r(1 * MILLI));                        // cogging torque
 
 
@@ -169,7 +161,7 @@ public:
 
 
   // Coil properties
-  inline real ia(void) const { return iab + iac; }
+  inline real ia(void) const { return  iab + iac; }
   inline real ib(void) const { return -iab; }
   inline real ic(void) const { return -iac; }
 
@@ -179,7 +171,10 @@ public:
 
 
   // Back-EMF
-  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * p->kt * r(2.0/3); }
+  // NB: kT is already defined in terms of real-world rotation, not phase
+  // rotations. So we need to treat kT as though it's already multiplied by the
+  // number of pole pairs.
+  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * p->kt; }
   inline real bemf_ab(real const t) const { return emf_magnitude() * (p->q_dot_a(phase_at(t)) - p->q_dot_b(phase_at(t))); }
   inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(phase_at(t)) - p->q_dot_c(phase_at(t))); }
 
@@ -201,23 +196,25 @@ public:
 
     // RK4 terms: k1, k2, k3, and k4
     let r           = p->phase_resistance;
-    let ab_didt_k1  = vab - ab_bemf_t0  - iab * r;
-    let ac_didt_k1  = vac - ac_bemf_t0  - iac * r;
+    let ab_didt_k1  = vab - ab_bemf_t0  -  iab                   * r;
+    let ac_didt_k1  = vac - ac_bemf_t0  -  iac                   * r;
     let ab_didt_k2  = vab - ab_bemf_t12 - (iab + dt2*ab_didt_k1) * r;
     let ac_didt_k2  = vac - ac_bemf_t12 - (iac + dt2*ac_didt_k1) * r;
     let ab_didt_k3  = vab - ab_bemf_t12 - (iab + dt2*ab_didt_k2) * r;
     let ac_didt_k3  = vac - ac_bemf_t12 - (iac + dt2*ac_didt_k2) * r;
-    let ab_didt_k4  = vab - ab_bemf_t1  - (iab + dt*ab_didt_k3)  * r;
-    let ac_didt_k4  = vac - ac_bemf_t1  - (iac + dt*ac_didt_k3)  * r;
+    let ab_didt_k4  = vab - ab_bemf_t1  - (iab + dt *ab_didt_k3) * r;
+    let ac_didt_k4  = vac - ac_bemf_t1  - (iac + dt *ac_didt_k3) * r;
 
     // Calculate the numerical deltas, but don't apply them yet. We want to use
     // the midpoints for second-stage integrals.
     let ab_di   = 1/p->phase_inductance * dt/6 * (ab_didt_k1 + 2*ab_didt_k2 + 2*ab_didt_k3 + ab_didt_k4);
     let ac_di   = 1/p->phase_inductance * dt/6 * (ac_didt_k1 + 2*ac_didt_k2 + 2*ac_didt_k3 + ac_didt_k4);
     let mid_iab = iab + ab_di/2;
-    let mid_iac = iac + ab_di/2;
+    let mid_iac = iac + ac_di/2;
 
     // Calculate core and electrical losses for this timestep.
+    // TODO: calculate EMF for core_joules to conserve energy
+    // TODO: fix mean_current, which currently just refers to IA
     let mean_current     = mid_iab + mid_iac;
     let voltage_drop     = mean_current * r;
     let resistive_joules = mean_current * voltage_drop * dt;
@@ -232,8 +229,8 @@ public:
     // Integrate into velocity
     let acceleration = net_torque       // N·m = kg m²/s²
                      * dt               // kg m²/s
-                     / p->rotor_inertia // 1[radian]/s
-                     / TAU;             // turn/sec
+                     / p->rotor_inertia // 1 [implied radian]/s
+                     / TAU;             // turn/s
 
     // Update state
     stator_joules  += resistive_joules + core_joules;
@@ -265,7 +262,7 @@ std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
             << "iab\t"
             << "iac\t"
             << "stator_joules\t"
-            << "dynamic_joules\t";
+            << "dynamic_joules";
 }
 
 std::ostream &operator<<(std::ostream &os, motor const &m)
@@ -276,7 +273,7 @@ std::ostream &operator<<(std::ostream &os, motor const &m)
             << m.iab            << "\t"
             << m.iac            << "\t"
             << m.stator_joules  << "\t"
-            << m.dynamic_joules << "\t";
+            << m.dynamic_joules;
 }
 
 
