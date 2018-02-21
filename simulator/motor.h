@@ -153,8 +153,8 @@ class motor
 public:
   real rotor_position = 0;              // absolute rotor turns
   real rotor_velocity = 0;              // turns/sec
-  real ab_current     = 0;              // A
-  real ac_current     = 0;              // A
+  real iab            = 0;              // A
+  real iac            = 0;              // A
 
   real stator_joules  = 0;              // J (electrical/core losses)
   real dynamic_joules = 0;              // J (friction losses)
@@ -166,13 +166,13 @@ public:
 
 
   // Coil properties
-  inline real ia(void) const { return ab_current + ac_current; }
-  inline real ib(void) const { return -ab_current; }
-  inline real ic(void) const { return -ac_current; }
+  inline real ia(void) const { return iab + iac; }
+  inline real ib(void) const { return -iab; }
+  inline real ic(void) const { return -iac; }
 
 
   // Rotor positioning
-  inline real pos_at(real const t) const { return rotor_position + t*rotor_velocity; }
+  inline real pos_at(real const t) const { return pole_pairs * (rotor_position + t*rotor_velocity); }
 
 
   // Back-EMF
@@ -181,22 +181,62 @@ public:
   inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_c(pos_at(t))); }
 
 
-  // Time stepping: assume constant drive voltage over a timestep, and return
-  // joules of mechanical output
-  real step(real const dt, real const va, real const vb, real const vc)
+  // Time stepping
+  void step(real const dt, real const va, real const vb, real const vc)
   {
     let vab = va - vb;
     let vac = va - vc;
 
     // Integrate coil currents with RK4
+    let dt2         = dt/2;
     let ab_bemf_t0  = bemf_ab(0);
     let ac_bemf_t0  = bemf_ac(0);
-    let ab_bemf_t12 = bemf_ab(dt/2);
-    let ac_bemf_t12 = bemf_ac(dt/2);
+    let ab_bemf_t12 = bemf_ab(dt2);
+    let ac_bemf_t12 = bemf_ac(dt2);
     let ab_bemf_t1  = bemf_ab(dt);
     let ac_bemf_t1  = bemf_ac(dt);
 
-    // TODO
+    // RK4 terms: k1, k2, k3, and k4
+    let r           = p->phase_resistance;
+    let ab_didt_k1  = vab - ab_bemf_t0  - iab * r;
+    let ac_didt_k1  = vac - ac_bemf_t0  - iac * r;
+    let ab_didt_k2  = vab - ab_bemf_t12 - (iab + dt2*ab_didt_k1) * r;
+    let ac_didt_k2  = vac - ac_bemf_t12 - (iac + dt2*ac_didt_k1) * r;
+    let ab_didt_k3  = vab - ab_bemf_t12 - (iab + dt2*ab_didt_k2) * r;
+    let ac_didt_k3  = vac - ac_bemf_t12 - (iac + dt2*ac_didt_k2) * r;
+    let ab_didt_k4  = vab - ab_bemf_t1  - (iab + dt*ab_didt_k3)  * r;
+    let ac_didt_k4  = vac - ac_bemf_t1  - (iac + dt*ac_didt_k3)  * r;
+
+    // Calculate the numerical deltas, but don't apply them yet. We want to use
+    // the midpoints for second-stage integrals.
+    let ab_di   = 1/p->phase_inductance * dt/6 * (ab_didt_k1 + 2*ab_didt_k2 + 2*ab_didt_k3 + ab_didt_k4);
+    let ac_di   = 1/p->phase_inductance * dt/6 * (ac_didt_k1 + 2*ac_didt_k2 + 2*ac_didt_k3 + ac_didt_k4);
+    let mid_iab = iab + ab_di/2;
+    let mid_iac = iac + ab_di/2;
+
+    // Calculate core and electrical losses for this timestep.
+    let mean_current     = mid_iab + mid_iac;
+    let voltage_drop     = mean_current * r
+    let resistive_joules = mean_current * voltage_drop * dt;
+    let core_joules      = fabs(ab_di) + fabs(ac_di);
+
+    // Net rotor torque
+    let windage_torque   = p->windage_loss  * rotor_velocity * fabs(rotor_velocity);
+    let friction_torque  = p->friction_loss * rotor_velocity;
+    let magnetic_torque  = p->magnetic_torque(pos_at(dt2), mid_iab, mid_iac);
+    let net_torque       = magnetic_torque - windage_torque - friction_torque;
+
+    // Integrate into velocity
+    let acceleration = net_torque       // N·m = kg m²/s²
+                     * dt               // = kg m²/s
+                     / rotor_inertia    // = 1[radian]/s
+                     / TAU;             // = turn/sec
+
+    // Update state
+    rotor_position += dt * (rotor_velocity + acceleration/2);
+    rotor_velocity += acceleration;
+    iab            += ab_di;
+    iac            += ac_di;
   }
 };
 
@@ -206,6 +246,30 @@ motor_header_t const motor_header;
 
 std::ostream &operator<<(std::ostream &os, motor_header_t const &h);
 std::ostream &operator<<(std::ostream &os, motor const &m);
+
+
+// Debugging/logging
+std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
+{
+  return os << "position\t"
+            << "velocity\t"
+            << "iab\t"
+            << "iac\t"
+            << "stator_joules\t"
+            << "dynamic_joules"
+            << std::endl;
+}
+
+std::ostream &operator<<(std::ostream &os, motor const &m)
+{
+  return os << m.rotor_position << "\t"
+            << m.rotor_velocity << "\t"
+            << m.iab            << "\t"
+            << m.iac            << "\t"
+            << m.stator_joules  << "\t"
+            << m.dynamic_joules
+            << std::endl;
+}
 
 
 }
