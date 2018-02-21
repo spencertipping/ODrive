@@ -6,41 +6,151 @@
 
 #include <stdint.h>
 
+#include "defines.h"
+
 
 namespace simulator
 {
 
-// Values from v3.3 board
-#define CPU_HZ     168000000
-#define PWM_CLOCKS 8192
-#define PWM_CYCLE  (1.0 / ((double) CPU_HZ / PWM_CLOCKS))
 
-// Remotely sane motor defaults
-#define MOTOR_KV 580                // rpm/V
-#define MOTOR_POLE_PAIRS 7
+class motor_parameters
+{
+public:
+  real pole_pairs;                    // Hz/turn
+  real rotor_inertia;                 // kg·m²
+  real kt;                            // torque constant: N·m/A = V·sec/rad
 
-#define ROTOR_WEIGHT (100 / 1000.0) // kg
-#define ROTOR_RADIUS (12  / 1000.0) // m
+  real phase_resistance;              // ohms
+  real phase_inductance;              // henries
+  real a_inductance_error;            // henries/henry
+  real b_inductance_error;            // henries/henry
+  real c_inductance_error;            // henries/henry
+  real saliency;                      // D henries / Q henries
+  real trapezoidal_bias;              // interpolation factor
 
-#define ROTOR_INERTIA (0.5 * ROTOR_RADIUS*ROTOR_RADIUS * ROTOR_WEIGHT)
+  real hysteresis_loss;               // J/ΔA
+  real windage_loss;                  // N·m/(turn/sec)²
+  real friction_loss;                 // N·m/(turn/sec)
+  real cogging_torque;                // N·m?
 
-// NB: I use τ as a unit of measure equal to one turn.
-#define TAU (2.0 * M_PI)            // radians per turn
+
+  motor_parameters(real const pole_pairs_,
+                   real const rotor_weight_,    // g
+                   real const rotor_radius_,    // mm
+                   real const kv_,              // RPM/V
+                   real const phase_resistance_,
+                   real const phase_inductance_,
+                   real const a_inductance_error_,
+                   real const b_inductance_error_,
+                   real const c_inductance_error_,
+                   real const saliency_,
+                   real const trapezoidal_bias_,
+                   real const hysteresis_loss_,
+                   real const windage_loss_,
+                   real const friction_loss_,
+                   real const cogging_torque_)
+    : pole_pairs   (pole_pairs_),
+      rotor_inertia(rotor_weight_ * MILLI * (rotor_radius_ * MILLI)
+                                          * (rotor_radius_ * MILLI)),
+
+      kt(9.5492966 / kv_),    // units -t 'V/rpm' 'N*m/A' -> 9.5492966
+
+      phase_resistance(phase_resistance_),
+      phase_inductance(phase_inductance_),
+      a_inductance_error(a_inductance_error_),
+      b_inductance_error(b_inductance_error_),
+      c_inductance_error(c_inductance_error_),
+      saliency(saliency_),
+      trapezoidal_bias(trapezoidal_bias_),
+
+      hysteresis_loss(hysteresis_loss_),
+      windage_loss(windage_loss_),
+      friction_loss(friction_loss_),
+      cogging_torque(cogging_torque_) {}
+
+
+  // Field geometry
+  inline real trapezoid(real const turns)
+  {
+    let tmod = std::fmod(turns, r(1));
+    return tmod < r(1.0/6) ?  tmod * 6
+         : tmod < r(2.0/6) ?  1
+         : tmod < r(3.0/6) ?  1 - (tmod - r(2.0/6)) * 6
+         : tmod < r(4.0/6) ?  0 - (tmod - r(3.0/6)) * 6
+         : tmod < r(5.0/6) ? -1
+         :                   -1 + (tmod - r(5.0/6)) * 6;
+  }
+
+  inline real tsin(real const t)    // TODO: improve accuracy of this fn
+  { return sin(t * TAU) * (1 - trapezoidal_bias)
+         + trapezoid(t) * trapezoidal_bias; }
+
+
+  // Stator geometry (normalized Clarke transform)
+  inline real i_alpha(real const a, real const b, real const c) const
+  { return r(2.0/3) * (a - (b + c) / 2); }
+
+  inline real i_beta (real const a, real const b, real const c) const
+  { return r(2.0/3) * (sqrt(r(3)) * b - sqrt(r(3)) * c); }
+
+
+  // Rotor geometry
+  // TODO: with trapezoidal sin(), these vector components may not norm to 1.
+  // How much of a problem is this?
+  inline real d_dot_alpha(real const p) const { return tsin(p);           }
+  inline real d_dot_beta (real const p) const { return tsin(p + r(0.25)); }
+  inline real q_dot_alpha(real const p) const { return tsin(p + r(0.25)); }
+  inline real q_dot_beta (real const p) const { return tsin(p + r(0.5));  }
+
+  inline real magnetic_torque(real const p, real const ab, real const ac) const
+  {
+    let a = ab + ac;                    // A
+    let b = -ab;                        // A
+    let c = -ac;                        // A
+
+    let iq = i_alpha(a, b, c) * q_dot_alpha(p)
+           + i_beta(a, b, c)  * q_dot_beta(p);
+
+    // This page explains the 3/4 factor; the gist is that it's a result of the
+    // scale-invariant Clarke transform I use above.
+    //
+    // https://e2e.ti.com/support/microcontrollers/c2000/f/902/p/298101/1044389#1044389
+    //
+    // Torque (Newton-Meters) = Rotor Flux (Webers = Volt-seconds/radian)
+    //                        * Iq (Amps)
+    //                        * Rotor Magnet Poles
+    //                        * (3/4)
+
+    return kt * iq * pole_pairs * 2 * r(0.75);
+  }
+};
+
+
+// Predefined motors
+motor_parameters const turnigy_c580l(
+  7,                                    // pole pairs
+  100,                                  // rotor weight grams (my guess)
+  12,                                   // rotor radius mm (my guess)
+  580,                                  // RPM/V
+  2 * MILLI,                            // phase resistance
+  250 * MICRO,                          // phase inductance
+  0, 0, 0,                              // phase inductance errors
+  0,                                    // saliency
+  r(0.8),                               // trapezoidal bias (TODO: measure)
+  0,                                    // hysteresis loss
+  0,                                    // windage loss
+  r(10 * MICRO),                        // friction loss
+  r(1 * MILLI));                        // cogging torque
 
 
 class motor
 {
 public:
   // Time-variant state
-  uint64_t cycles         = 0;                // CPU clock cycles
   double rotor_position   = 0;                // absolute rotor turns (τ)
   double rotor_velocity   = 0;                // τ/sec
   double ab_current       = 0;                // A
   double ac_current       = 0;                // A
-
-  uint16_t a_pwm          = 4096;             // number of cycles for ON state
-  uint16_t b_pwm          = 4096;             // number of cycles
-  uint16_t c_pwm          = 4096;             // number of cycles
 
   // Debugging
 #ifdef DEBUG
@@ -56,12 +166,6 @@ public:
   double transient_d_velocity = 0;
 #endif
 
-  // Hardware parameters
-  double v33              = 3.3;              // V
-  double vbus             = 12;               // V
-  double vbus_divider     = 11;               // V
-  double shunt_resistance = 675e-6;           // ohms (v3.3 board)
-
   // NB: these parameters are unusual in that they don't follow the ideal
   // three-phase model; they instead model the common BLDC configuration that
   // involves multiple pole-cycles per revolution. I'm not modeling actual
@@ -72,7 +176,6 @@ public:
   // motor's torque constant (N·m / quadrature amp).
   double flux_linkage     = 5.51328895422 / (MOTOR_KV * MOTOR_POLE_PAIRS);
 
-  double pwm_cycle_time   = PWM_CYCLE;        // seconds
   double rotor_inertia    = ROTOR_INERTIA;    // kg·m²
   double trapezoidal_bias = 0.7;              // interpolation factor
 
@@ -81,12 +184,6 @@ public:
   double cogging_torque   = 0.01;             // N·m
   double phase_resistance = 0.2;              // ohms
   double phase_inductance = 0.0005;           // henries
-  double shunt_amp_gain   = 40.0;             // V / V
-
-  // Error modeling
-  double adc_jitter       = 0.01;   // expected error in volts per 3.3v reading
-  double shunt_b_error    = 0;      // resistor bias: ohms/ohm
-  double shunt_c_error    = 0;      // resistor bias: ohms/ohm
 
 
   motor(void) {}
@@ -110,20 +207,6 @@ public:
   // Internal functions
   uint16_t adc_sample_of(double real_voltage) const;
 
-  inline double trapezoid(double const t)
-  {
-    double const tmod = std::fmod(t, 1.0);
-    return tmod < 1.0/6 ?  tmod * 6
-         : tmod < 2.0/6 ?  1
-         : tmod < 3.0/6 ?  1 - (tmod - 2.0/6) * 6
-         : tmod < 4.0/6 ?  0 - (tmod - 3.0/6) * 6
-         : tmod < 5.0/6 ? -1
-         :                -1 + (tmod - 5.0/6) * 6;
-  }
-
-  inline double tsin(double const t)
-  { return sin(t * TAU) * (1.0 - trapezoidal_bias)
-         + trapezoid(t) * trapezoidal_bias; }
 
   inline double rotor_at    (double   const t)      const { return rotor_position + t*rotor_velocity; }
   inline double time_at     (uint64_t const cycles) const { return (double) cycles / CPU_HZ; }
