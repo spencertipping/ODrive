@@ -8,8 +8,8 @@ using namespace simulator;
 
 int main()
 {
-  motor m;
+  motor m(c580l);
   for (double x = 0; x < TAU; x += 0.001)
-    cout << x << "\t" << m.trapezoid(x) << "\t" << m.tsin(x) << endl;
+    cout << x << "\t" << m.p->trapezoid(x) << "\t" << m.p->tsin(x) << endl;
   return 0;
 }

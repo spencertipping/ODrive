@@ -8,18 +8,17 @@ using namespace simulator;
 
 int main()
 {
-  motor m;
+  motor m(c580l);
   m.rotor_position = 0.1;       // not evenly cogged; we want it to move
-  m.drive(0.7, 0, 0);           // ab = ac, drive A high
 
   // print header row
-  cout << motor_header;
+  cout << "time\t" << motor_header;
 
-  // run for 500ms of simulated time, 200 clock cycles between printouts
-  while (m.time() < 0.5)
+  // run for 1 second, 1 microsecond at a time
+  for (real t = 0; t < 1;)
   {
-    cout << m;
-    for (int i = 0; i < 100; ++i) m.step();
+    cout << t << "\t" << m;
+    for (int i = 0; i < 100; ++i, t += 1*MICRO) m.step(1 * MICRO, 12, 0, 0);
   }
 
   return 0;

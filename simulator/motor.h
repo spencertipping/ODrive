@@ -16,7 +16,8 @@ namespace simulator
 class motor_parameters
 {
 public:
-  real pole_pairs;                    // Hz/turn
+  std::string name;
+  int  pole_pairs;                    // Hz/turn
   real rotor_inertia;                 // kg·m²
   real kt;                            // torque constant: N·m/A = V·sec/rad
 
@@ -34,7 +35,8 @@ public:
   real cogging_torque;                // N·m?
 
 
-  motor_parameters(real const pole_pairs_,
+  motor_parameters(std::string const name_,
+                   int  const pole_pairs_,
                    real const rotor_weight_,    // g
                    real const rotor_radius_,    // mm
                    real const kv_,              // RPM/V
@@ -49,7 +51,8 @@ public:
                    real const windage_loss_,
                    real const friction_loss_,
                    real const cogging_torque_)
-    : pole_pairs   (pole_pairs_),
+    : name         (name_),
+      pole_pairs   (pole_pairs_),
       rotor_inertia(rotor_weight_ * MILLI * (rotor_radius_ * MILLI)
                                           * (rotor_radius_ * MILLI)),
 
@@ -70,20 +73,20 @@ public:
 
 
   // Field geometry
-  inline real trapezoid(real const turns)
+  inline real trapezoid(real const phase) const
   {
-    let tmod = std::fmod(turns, r(1));
-    return tmod < r(1.0/6) ?  tmod * 6
-         : tmod < r(2.0/6) ?  1
-         : tmod < r(3.0/6) ?  1 - (tmod - r(2.0/6)) * 6
-         : tmod < r(4.0/6) ?  0 - (tmod - r(3.0/6)) * 6
-         : tmod < r(5.0/6) ? -1
-         :                   -1 + (tmod - r(5.0/6)) * 6;
+    let pmod = std::fmod(phase, r(1));
+    return pmod < r(1.0/6) ?  pmod * 6
+         : pmod < r(2.0/6) ?  1
+         : pmod < r(3.0/6) ?  1 - (pmod - r(2.0/6)) * 6
+         : pmod < r(4.0/6) ?  0 - (pmod - r(3.0/6)) * 6
+         : pmod < r(5.0/6) ? -1
+         :                   -1 + (pmod - r(5.0/6)) * 6;
   }
 
-  inline real tsin(real const t)    // TODO: improve accuracy of this fn
-  { return sin(t * TAU) * (1 - trapezoidal_bias)
-         + trapezoid(t) * trapezoidal_bias; }
+  inline real tsin(real const phase) const   // TODO: improve accuracy
+  { return sin(phase * TAU) * (1 - trapezoidal_bias)
+         + trapezoid(phase) * trapezoidal_bias; }
 
 
   // Stator geometry (normalized Clarke transform)
@@ -97,23 +100,23 @@ public:
   // Rotor geometry
   // TODO: with trapezoidal sin(), these vector components may not norm to 1.
   // How much of a problem is this?
-  inline real d_dot_alpha(real const p) const { return tsin(p);           }
-  inline real d_dot_beta (real const p) const { return tsin(p + r(0.25)); }
-  inline real q_dot_alpha(real const p) const { return tsin(p + r(0.25)); }
-  inline real q_dot_beta (real const p) const { return tsin(p + r(0.5));  }
+  inline real d_dot_alpha(real const phase) const { return tsin(phase);           }
+  inline real d_dot_beta (real const phase) const { return tsin(phase + r(0.25)); }
+  inline real q_dot_alpha(real const phase) const { return tsin(phase + r(0.25)); }
+  inline real q_dot_beta (real const phase) const { return tsin(phase + r(0.5));  }
 
-  inline real q_dot_a(real const p) const { return q_dot_alpha(p); }
-  inline real q_dot_b(real const p) const { return -0.5 * q_dot_alpha(p) + sqrt(r(3))/2 * q_dot_beta(p); }
-  inline real q_dot_c(real const p) const { return -0.5 * q_dot_alpha(p) - sqrt(r(3))/2 * q_dot_beta(p); }
+  inline real q_dot_a(real const phase) const { return q_dot_alpha(phase); }
+  inline real q_dot_b(real const phase) const { return -0.5 * q_dot_alpha(phase) + sqrt(r(3))/2 * q_dot_beta(phase); }
+  inline real q_dot_c(real const phase) const { return -0.5 * q_dot_alpha(phase) - sqrt(r(3))/2 * q_dot_beta(phase); }
 
-  inline real magnetic_torque(real const p, real const ab, real const ac) const
+  inline real magnetic_torque(real const phase, real const ab, real const ac) const
   {
     let a = ab + ac;                    // A
     let b = -ab;                        // A
     let c = -ac;                        // A
 
-    let iq = i_alpha(a, b, c) * q_dot_alpha(p)
-           + i_beta(a, b, c)  * q_dot_beta(p);
+    let iq = i_alpha(a, b, c) * q_dot_alpha(phase)
+           + i_beta(a, b, c)  * q_dot_beta(phase);
 
     // This page explains the 3/4 factor; the gist is that it's a result of the
     // scale-invariant Clarke transform I use above.
@@ -131,7 +134,7 @@ public:
 
 
 // Predefined motors
-motor_parameters const turnigy_c580l(
+motor_parameters const c580l("turnigy C580L 580Kv",
   7,                                    // pole pairs
   100,                                  // rotor weight grams (my guess)
   12,                                   // rotor radius mm (my guess)
@@ -162,7 +165,7 @@ public:
   motor_parameters const *p;
 
 
-  motor(motor_parameters const *const p_) : p(p_) {}
+  motor(motor_parameters const &p_) : p(&p_) {}
 
 
   // Coil properties
@@ -172,11 +175,11 @@ public:
 
 
   // Rotor positioning
-  inline real pos_at(real const t) const { return pole_pairs * (rotor_position + t*rotor_velocity); }
+  inline real pos_at(real const t) const { return p->pole_pairs * (rotor_position + t*rotor_velocity); }
 
 
   // Back-EMF
-  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * kt; }
+  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * p->kt; }
   inline real bemf_ab(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_b(pos_at(t))); }
   inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_c(pos_at(t))); }
 
@@ -216,7 +219,7 @@ public:
 
     // Calculate core and electrical losses for this timestep.
     let mean_current     = mid_iab + mid_iac;
-    let voltage_drop     = mean_current * r
+    let voltage_drop     = mean_current * r;
     let resistive_joules = mean_current * voltage_drop * dt;
     let core_joules      = fabs(ab_di) + fabs(ac_di);
 
@@ -228,11 +231,16 @@ public:
 
     // Integrate into velocity
     let acceleration = net_torque       // N·m = kg m²/s²
-                     * dt               // = kg m²/s
-                     / rotor_inertia    // = 1[radian]/s
-                     / TAU;             // = turn/sec
+                     * dt               // kg m²/s
+                     / p->rotor_inertia // 1[radian]/s
+                     / TAU;             // turn/sec
 
     // Update state
+    stator_joules  += resistive_joules + core_joules;
+    dynamic_joules += fabs(windage_torque + friction_torque)        // N·m
+                    * fabs((rotor_velocity + acceleration/2) * TAU) // N·m/s
+                    * dt;                                           // N·m
+
     rotor_position += dt * (rotor_velocity + acceleration/2);
     rotor_velocity += acceleration;
     iab            += ab_di;
@@ -251,7 +259,8 @@ std::ostream &operator<<(std::ostream &os, motor const &m);
 // Debugging/logging
 std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
 {
-  return os << "position\t"
+  return os << "name\t"
+            << "position\t"
             << "velocity\t"
             << "iab\t"
             << "iac\t"
@@ -262,7 +271,8 @@ std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
 
 std::ostream &operator<<(std::ostream &os, motor const &m)
 {
-  return os << m.rotor_position << "\t"
+  return os << m.p->name        << "\t"
+            << m.rotor_position << "\t"
             << m.rotor_velocity << "\t"
             << m.iab            << "\t"
             << m.iac            << "\t"
