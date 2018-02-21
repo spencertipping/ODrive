@@ -175,13 +175,13 @@ public:
 
 
   // Rotor positioning
-  inline real pos_at(real const t) const { return p->pole_pairs * (rotor_position + t*rotor_velocity); }
+  inline real phase_at(real const t) const { return p->pole_pairs * (rotor_position + t*rotor_velocity); }
 
 
   // Back-EMF
-  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * p->kt; }
-  inline real bemf_ab(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_b(pos_at(t))); }
-  inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(pos_at(t)) - p->q_dot_c(pos_at(t))); }
+  inline real emf_magnitude(void)   const { return rotor_velocity * TAU * p->kt * r(2.0/3); }
+  inline real bemf_ab(real const t) const { return emf_magnitude() * (p->q_dot_a(phase_at(t)) - p->q_dot_b(phase_at(t))); }
+  inline real bemf_ac(real const t) const { return emf_magnitude() * (p->q_dot_a(phase_at(t)) - p->q_dot_c(phase_at(t))); }
 
 
   // Time stepping
@@ -226,7 +226,7 @@ public:
     // Net rotor torque
     let windage_torque   = p->windage_loss  * rotor_velocity * fabs(rotor_velocity);
     let friction_torque  = p->friction_loss * rotor_velocity;
-    let magnetic_torque  = p->magnetic_torque(pos_at(dt2), mid_iab, mid_iac);
+    let magnetic_torque  = p->magnetic_torque(phase_at(dt2), mid_iab, mid_iac);
     let net_torque       = magnetic_torque - windage_torque - friction_torque;
 
     // Integrate into velocity
@@ -265,8 +265,7 @@ std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
             << "iab\t"
             << "iac\t"
             << "stator_joules\t"
-            << "dynamic_joules"
-            << std::endl;
+            << "dynamic_joules\t";
 }
 
 std::ostream &operator<<(std::ostream &os, motor const &m)
@@ -277,8 +276,7 @@ std::ostream &operator<<(std::ostream &os, motor const &m)
             << m.iab            << "\t"
             << m.iac            << "\t"
             << m.stator_joules  << "\t"
-            << m.dynamic_joules
-            << std::endl;
+            << m.dynamic_joules << "\t";
 }
 
 
