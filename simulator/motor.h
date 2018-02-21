@@ -27,8 +27,6 @@ namespace simulator
 // NB: I use τ as a unit of measure equal to one turn.
 #define TAU (2.0 * M_PI)            // radians per turn
 
-#define RMS_TO_PEAK (sqrt(2))
-
 
 class motor
 {
