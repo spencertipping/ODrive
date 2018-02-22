@@ -14,17 +14,18 @@ namespace simulator
 {
 
 
-static real sqrt3      = sqrt(r(3));
-static real half_sqrt3 = sqrt3 / 2;
-static real over_sqrt3 = 1 / sqrt3;
+constexpr static real sqrt3      = sqrt(r(3));
+constexpr static real half_sqrt3 = sqrt3 / 2;
+constexpr static real over_sqrt3 = 1 / sqrt3;
+
+static inline constexpr int sgn(real x) { return (x > 0) - (x < 0); }
 
 
-class motor_parameters
+struct motor_parameters
 {
-public:
   std::string name;
   int  pole_pairs;                    // Hz/turn
-  real rotor_inertia;                 // kg·m²
+  real rotor_inertia;                 // kg·m²/radian²
   real kt;                            // torque constant: N·m/A = V·sec/rad
 
   real phase_resistance;              // ohms per coil
@@ -32,9 +33,9 @@ public:
   real saliency;                      // D henries / Q henries
   real trapezoidal_bias;              // interpolation factor
 
-  real windage_loss;                  // N·m/(turn/sec)²
-  real friction_loss;                 // N·m/(turn/sec) = W/(turn/sec) = J/turn
-  real cogging_torque;                // N·m? (TODO)
+  real windage_loss;                  // (N·m/radian)/(turn/sec)
+  real friction_torque;               // N·m/radian
+  real cogging_torque;                // N·m/radian? (TODO)
 
 
   motor_parameters(std::string const name_,
@@ -47,7 +48,7 @@ public:
                    real saliency_,
                    real trapezoidal_bias_,
                    real windage_loss_,
-                   real friction_loss_,
+                   real friction_torque_,
                    real cogging_torque_)
 
     : name         (name_),
@@ -55,7 +56,7 @@ public:
       rotor_inertia(rotor_weight_ * MILLI * (rotor_radius_ * MILLI)
                                           * (rotor_radius_ * MILLI) / 2),
 
-      kt(9.5492966 / kv_),    // $ units -t 'V/rpm' 'N*m/A' -> 9.5492966
+      kt(9.5492966 / kv_),    // $ units -t 'V/rpm' 'N*m/radian/A' -> 9.5492966
 
       phase_resistance(phase_resistance_),
       phase_inductance(phase_inductance_),
@@ -63,7 +64,7 @@ public:
       trapezoidal_bias(trapezoidal_bias_),
 
       windage_loss(windage_loss_),
-      friction_loss(friction_loss_),
+      friction_torque(friction_torque_),
       cogging_torque(cogging_torque_) {}
 
 
@@ -79,18 +80,18 @@ public:
          :                   -1 + (pmod - r(5.0/6)) * 6;
   }
 
-  inline real tsin(real phase) const   // TODO: improve accuracy
+  inline real tsin(real phase) const    // TODO: improve accuracy
   { return sin(phase * TAU) * (1 - trapezoidal_bias)
          + trapezoid(phase) * trapezoidal_bias; }
 
 
   // Stator geometry (Clarke transform)
-  inline real alpha(real b, real c) const { let a = -(b + c); return r(2.0/3) * (a - (b + c) / 2); }
-  inline real beta (real b, real c) const { return r(2.0/3) * half_sqrt3 * (b - c); }
+  constexpr inline real alpha(real b, real c) const { let a = -(b + c); return r(2.0/3) * (a - (b + c) / 2); }
+  constexpr inline real beta (real b, real c) const { return r(2.0/3) * half_sqrt3 * (b - c); }
 
-  inline real a(real alpha, real beta) const { return alpha; }
-  inline real b(real alpha, real beta) const { return -alpha/2 + half_sqrt3*beta; }
-  inline real c(real alpha, real beta) const { return -alpha/2 - half_sqrt3*beta; }
+  constexpr inline real a(real alpha, real beta) const { return alpha; }
+  constexpr inline real b(real alpha, real beta) const { return -alpha/2 + half_sqrt3*beta; }
+  constexpr inline real c(real alpha, real beta) const { return -alpha/2 - half_sqrt3*beta; }
 
 
   // Rotor geometry
@@ -191,8 +192,8 @@ motor_parameters const c580l("turnigy C580L",
   // means we have a baseline for friction+windage losses (I assume mostly
   // friction).
   //
-  // $ units -t '(1.6A)^2 * 2mohm' W                      -> 0.00512    // ohmic losses
-  // $ units -t '(32 - 0.00512)W/11600rpm' 'W/(turn/sec)' -> 0.16549076
+  // $ units -t '(1.6A)^2 * 2mohm' W                      -> 0.00512
+  // $ units -t '(32 - 0.00512)W/11600rpm' 'N*m/radian'   -> 0.026338672
 
   7,                                    // pole pairs
   100,                                  // rotor weight grams (my guess)
@@ -203,29 +204,84 @@ motor_parameters const c580l("turnigy C580L",
   1,                                    // saliency
   r(0.8),                               // trapezoidal bias (TODO: measure)
   0,                                    // windage loss (TODO: measure?)
-  r(0.16549076),                        // friction loss
+  r(0.026338672),                       // friction torque
   r(1 * MILLI));                        // cogging torque (TODO)
 
 
-// Time-variant motor state
-class motor
+struct motor;
+struct motor_load_sum;
+
+struct motor_load
 {
-public:
+  virtual ~motor_load() {}
+
+  // Returns torque at a specific moment in time. dt is provided only for
+  // midpoint interpolation purposes; semantically the idea is to return torque
+  // at a single moment in time. This function can query, but not modify, the
+  // motor.
+  //
+  // If the load is resistive, then the torque direction should be positive. The
+  // torque will be multiplied by the sign of the rotor velocity and then
+  // subtracted.
+  virtual real torque(real dt, motor const &m) const { return 0; }
+
+  // Simulates driving the load, advancing time. This is called each time you
+  // step a motor. The position is specified in turns. By default this function
+  // does nothing. The motor's time will not have been advanced when this
+  // function is called.
+  virtual void drive(real dt, real dposition, motor const &m) {}
+
+  motor_load &operator+(motor_load &rhs);
+};
+
+struct motor_load_sum : public motor_load
+{
+  motor_load *const lhs;
+  motor_load *const rhs;
+
+  motor_load_sum(motor_load &lhs_, motor_load &rhs_) : lhs(&lhs_), rhs(&rhs_) {}
+
+  virtual real torque(real dt, motor const &m) const
+  {
+    return lhs->torque(dt, m) + rhs->torque(dt, m);
+  }
+
+  virtual void drive(real dt, real dposition, motor const &m)
+  {
+    lhs->drive(dt, dposition, m);
+    rhs->drive(dt, dposition, m);
+  }
+};
+
+motor_load &motor_load::operator+(motor_load &rhs)
+{ return *new motor_load_sum(*this, rhs); }
+
+
+// Time-variant motor state
+struct motor
+{
+  real_mut t               = 0;         // motor time
   real_mut rotor_position  = 0;         // absolute rotor turns
   real_mut rotor_velocity  = 0;         // turns/sec
   real_mut ialpha          = 0;         // A
   real_mut ibeta           = 0;         // A
+  real_mut valpha          = 0;         // V
+  real_mut vbeta           = 0;         // V
   real_mut stator_losses   = 0;         // J (mostly electrical heating)
   real_mut friction_losses = 0;         // J (windage + bearing friction)
 
   motor_parameters const *p;
+  motor_load             *l;
 
 
-  motor(motor_parameters const &p_) : p(&p_) {}
+  motor(motor_parameters const &p_) : p(&p_), l(NULL) {}
+
+  motor(motor_parameters const &p_,
+        motor_load             &l_) : p(&p_), l(&l_) {}
 
 
   // Rotor positioning
-  inline real phase_at(real t) const { return p->pole_pairs * (rotor_position + t*rotor_velocity); }
+  inline real phase_at(real dt) const { return p->pole_pairs * (rotor_position + dt*rotor_velocity); }
 
 
   // Terminal currents
@@ -286,24 +342,31 @@ public:
     let mid_ibeta  = ibeta  + beta_di/2;
 
     // Net rotor torque
-    let windage_torque  = p->windage_loss  * rotor_velocity * fabs(rotor_velocity);
-    let friction_torque = p->friction_loss * rotor_velocity;
+    let friction_torque = p->friction_torque * sgn(rotor_velocity);
+    let windage_torque  = p->windage_loss    * rotor_velocity;
     let magnetic_torque = p->magnetic_torque(phase_at(dt/2), mid_ialpha, mid_ibeta);
-    let net_torque      = magnetic_torque - windage_torque - friction_torque;
+    let load_torque     = l ? l->torque(dt, *this) * sgn(rotor_velocity) : 0;
+    let net_torque      = magnetic_torque
+                        - windage_torque - friction_torque - load_torque;
 
-    // Integrate into velocity
-    let acceleration = net_torque       // N·m = kg m²/s²
-                     * dt               // kg m²/s
-                     / p->rotor_inertia // 1 [implied radian]/s
+    // Integrate into velocity and position
+    let acceleration = net_torque       // N·m/rad = (kg m²/rad)/s²
+                     * dt               // (kg m²/rad)/s
+                     / p->rotor_inertia // rad/s
                      / TAU;             // turn/s
 
-    // Update state
-    stator_losses   += p->stator_power(mid_ialpha, mid_ibeta);
-    friction_losses += fabs(windage_torque + friction_torque)         // N·m
-                     * fabs((rotor_velocity + acceleration/2) * TAU)  // N·m/s
-                     * dt;                                            // N·m
+    let dposition = dt * (rotor_velocity + acceleration/2);
 
-    rotor_position += dt * (rotor_velocity + acceleration/2);
+    // Update state
+    stator_losses   += p->stator_power(mid_ialpha, mid_ibeta) * dt;
+    friction_losses +=
+        fabs(windage_torque + friction_torque)         // N·m/rad
+      * fabs((rotor_velocity + acceleration/2) * TAU)  // N·m/s
+      * dt;                                            // J
+
+    if (l) l->drive(dt, dposition, *this);
+    t              += dt;
+    rotor_position += dposition;
     rotor_velocity += acceleration;
     ialpha         += alpha_di;
     ibeta          += beta_di;
@@ -311,6 +374,30 @@ public:
 };
 
 
+// Mechanical loads
+struct motor_friction_load : public motor_load
+{
+  real f = 0;
+  virtual real torque(real dt, motor const &m) const { return f; }
+};
+
+
+struct motor_inertial_load : public motor_load
+{
+  real     angular_inertia = 0;                       // kg m²/radian²
+  real_mut velocity        = 0;
+
+  virtual real torque(real dt, motor const &m) const
+  {
+    return (velocity - m.rotor_velocity) / dt * TAU   // radian/s²
+         * angular_inertia;                           // N·m/radian
+  }
+
+  virtual void drive(real dt, real dposition, motor const &m) { velocity = dposition / dt; }
+};
+
+
+// Debugging/logging
 class motor_header_t {};
 motor_header_t const motor_header;
 
@@ -318,7 +405,6 @@ std::ostream &operator<<(std::ostream &os, motor_header_t const &h);
 std::ostream &operator<<(std::ostream &os, motor const &m);
 
 
-// Debugging/logging
 std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
 {
   return os << "name\t"

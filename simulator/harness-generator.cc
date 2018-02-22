@@ -36,7 +36,7 @@ int main()
   }
 
   // Let the rotor coast and generate some power from the rotor momentum
-  while (t < 1.1)
+  while (t < 2)
   {
     cout << t << "\t"
          << m << "\t"
