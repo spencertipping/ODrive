@@ -33,7 +33,7 @@ public:
   real trapezoidal_bias;              // interpolation factor
 
   real windage_loss;                  // N·m/(turn/sec)²
-  real friction_loss;                 // N·m/(turn/sec)
+  real friction_loss;                 // N·m/(turn/sec) = W/(turn/sec) = J/turn
   real cogging_torque;                // N·m? (TODO)
 
 
@@ -187,6 +187,13 @@ public:
 
 // Predefined motors
 motor_parameters const c580l("turnigy C580L",
+  // NB: the no-load current for this motor is 1.6A @20V = 32W @11600 RPM. This
+  // means we have a baseline for friction+windage losses (I assume mostly
+  // friction).
+  //
+  // $ units -t '(1.6A)^2 * 2mohm' W                      -> 0.00512    // ohmic losses
+  // $ units -t '(32 - 0.00512)W/11600rpm' 'W/(turn/sec)' -> 0.16549076
+
   7,                                    // pole pairs
   100,                                  // rotor weight grams (my guess)
   12,                                   // rotor radius mm (my guess)
@@ -195,8 +202,8 @@ motor_parameters const c580l("turnigy C580L",
   250 * MICRO,                          // phase inductance
   1,                                    // saliency
   r(0.8),                               // trapezoidal bias (TODO: measure)
-  r(10 * MICRO),                        // windage loss
-  r(10 * MILLI),                        // friction loss
+  0,                                    // windage loss (TODO: measure?)
+  r(0.16549076),                        // friction loss
   r(1 * MILLI));                        // cogging torque (TODO)
 
 
