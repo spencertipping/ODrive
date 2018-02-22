@@ -14,11 +14,16 @@ int main()
   // Given the way back-EMF works, we should see peaks at ±1V per coil pair.
 
   // Measure the three phase back-EMF at each rotation point
-  for (real t = 0; t < 1/m.rotor_velocity/7; t += 1 * MICRO)
+  for (real_mut t = 0; t < 1/m.rotor_velocity/7; t += 1 * MICRO)
+  {
+    let p     = m.phase_at(t);
+    let emf_a = m.p->alpha_emf(p, m.rotor_velocity);
+    let emf_b = m.p->beta_emf (p, m.rotor_velocity);
     cout << t << "\t"
-         << m.bemf_ab(t) << "\t"
-         << m.bemf_ac(t) << "\t"
+         << emf_a << "\t"
+         << emf_b << "\t"
          << endl;
+  }
 
   return 0;
 }

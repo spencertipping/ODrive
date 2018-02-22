@@ -2,8 +2,16 @@
 #define DEFINES_H
 
 
+#include <cassert>
+#include <cmath>
+
+
+#define must_be_finite(x) assert(std::isfinite(x))
+
+
 // real = double for PC simulations, but on the board we probably want floats
-#define real double
+#define real_mut double
+#define real real_mut const
 #define r(x) ((real) (x))
 
 // Shorthand: "let x = 10;", for example

@@ -14,15 +14,13 @@ int main()
   // print header row
   cout << "time\t"
        << motor_header << "\t"
-       << "bemf_ab\t"
        << endl;
 
-  real const dt = 100*NANO;
-  for (real t = 0; t < 1;)
+  real dt = 100*NANO;
+  for (real_mut t = 0; t < 1;)
   {
     cout << t << "\t"
          << m << "\t"
-         << m.bemf_ab(0) << "\t"
          << endl;
     for (int i = 0; i < 100; ++i, t += dt) m.step(dt, 1, 0, 0);
   }
