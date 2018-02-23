@@ -15,9 +15,8 @@ namespace simulator
 {
 
 
-class board_parameters
+struct board_parameters
 {
-public:
   // NB: defaults below are from the v3.3 board. I guess a TODO would be to have
   // multiple constructors that set these up differently. I can't have a
   // constant instance because I want to be able to tweak board-specific things
@@ -34,10 +33,10 @@ public:
   real fet_switching_time     = r(20 * NANO);     // seconds
 
   // Shunt resistors and amplifiers
-  real shunt_resistance       = r(675 * MICRO);   // ohms
-  real shunt_amp_gain         = 40;               // V / V
-  real shunt_b_error          = 0;                // ohms/ohm
-  real shunt_c_error          = 0;                // ohms/ohm
+  real     shunt_resistance   = r(675 * MICRO);   // ohms
+  real     shunt_amp_gain     = 40;               // V / V
+  real_mut shunt_b_error      = 0;                // ohms/ohm
+  real_mut shunt_c_error      = 0;                // ohms/ohm
 
   real b_shunt_rc_capacitance = r(2200 * PICO);   // F
   real c_shunt_rc_capacitance = r(2200 * PICO);   // F
@@ -90,9 +89,8 @@ public:
 };
 
 
-class board
+struct board
 {
-public:
   uint64_t cycles = 0;                  // clocks: current time
 
   // 3-PWM timings for the DRV8301 (the hardware supports 6-PWM, but looks like
@@ -102,40 +100,37 @@ public:
   uint16_t c_pwm = PWM_CLOCKS / 2;      // clocks: duty cycle / PWM_CLOCKS
 
   // Total drive power consumption (not including the processor)
-  real power_consumed = 0;              // J
+  real_mut power_consumed = 0;          // J
 
   // FET temperature modeling: measure joules dissipated per FET, then divide
   // over time to get wattage and therefore temperature. I don't want to model
   // the junction temperature directly because we don't know the thermal mass.
-  real fet_al_heat = 0;                 // J
-  real fet_ah_heat = 0;                 // J
-  real fet_bl_heat = 0;                 // J
-  real fet_bl_heat = 0;                 // J
-  real fet_ch_heat = 0;                 // J
-  real fet_ch_heat = 0;                 // J
+  real_mut fet_al_heat = 0;             // J
+  real_mut fet_ah_heat = 0;             // J
+  real_mut fet_bl_heat = 0;             // J
+  real_mut fet_bl_heat = 0;             // J
+  real_mut fet_ch_heat = 0;             // J
+  real_mut fet_ch_heat = 0;             // J
 
   // TODO: brake resistor
 
   // 2200pF capacitors in the RC filter from the (amplified) current shunts
-  real b_shunt_capacitor_voltage = 0;   // V
-  real c_shunt_capacitor_voltage = 0;   // V
+  real_mut b_shunt_capacitor_voltage = 0;   // V
+  real_mut c_shunt_capacitor_voltage = 0;   // V
 
   // Hardware and configuration
   board_parameters const *p;
   motor                  *m;
 
 
-  board(board_parameters const *const p_,
-        motor                  *const m_) : p(p_), m(m_) {}
+  board(board_parameters const &p_,
+        motor                  &m_) : p(&p_), m(&m_) {}
 
 
   // FET drives
   inline real driven_va_at(uint64_t const c) const { return p->pwm_clock(c) < a_pwm ? vbus : 0; }
   inline real driven_vb_at(uint64_t const c) const { return p->pwm_clock(c) < b_pwm ? vbus : 0; }
   inline real driven_vc_at(uint64_t const c) const { return p->pwm_clock(c) < c_pwm ? vbus : 0; }
-
-  inline real driven_ab_at(uint64_t const c) const { return driven_va_at(c) - driven_vb_at(c); }
-  inline real driven_ac_at(uint64_t const c) const { return driven_va_at(c) - driven_vc_at(c); }
 
   inline void drive(real const a, real const b, real const c)
   {
@@ -148,8 +143,10 @@ public:
   {
     let dt = p->t_at(dc) - p->t_at(0);
 
+    // TODO: piecewise simulation for different FET states
+
     // TODO: joule heating for FETs, simulate shunt amp RC filters
-    m->step(dt, driven_ab_at(cycles), driven_ac_at(cycles));
+    m->step(dt, TODO);
     cycles += dc;
   }
 

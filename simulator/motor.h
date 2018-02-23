@@ -136,7 +136,7 @@ struct motor_parameters
   // There are two Z/2 paths, so the collective impedance between the midpoint
   // and B/C is Z/4.
   //
-  // Current along beta is simpler: the collective impedance there ignores the
+  // Current along β is simpler: the collective impedance there ignores the
   // A<->midpoint connection, so it's just sqrt(3) * Z.
 
   inline real alpha_inductance(real phase) const
@@ -265,8 +265,6 @@ struct motor
   real_mut rotor_velocity  = 0;         // turns/sec
   real_mut ialpha          = 0;         // A
   real_mut ibeta           = 0;         // A
-  real_mut valpha          = 0;         // V
-  real_mut vbeta           = 0;         // V
   real_mut stator_losses   = 0;         // J (mostly electrical heating)
   real_mut friction_losses = 0;         // J (windage + bearing friction)
 
@@ -274,7 +272,7 @@ struct motor
   motor_load             *l;
 
 
-  motor(motor_parameters const &p_) : p(&p_), l(NULL) {}
+  motor(motor_parameters const &p_) : p(&p_), l(nullptr) {}
 
   motor(motor_parameters const &p_,
         motor_load             &l_) : p(&p_), l(&l_) {}
