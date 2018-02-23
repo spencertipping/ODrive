@@ -15,17 +15,17 @@ int main()
 
   cout << board_header << "\t" << motor_header << endl;
 
-  // Create a field rotating at 1 turn/sec
+  // Create a field rotating at 10 turns/sec
   while (m.time < 2)
   {
-    let alpha = cos(m.time * TAU * m.p->pole_pairs);
-    let beta  = sin(m.time * TAU * m.p->pole_pairs);
+    let alpha = cos(m.time * 10 * TAU * m.p->pole_pairs);
+    let beta  = sin(m.time * 10 * TAU * m.p->pole_pairs);
     let va    = (m.p->a(alpha, beta) + 1) / 2;
     let vb    = (m.p->b(alpha, beta) + 1) / 2;
     let vc    = (m.p->c(alpha, beta) + 1) / 2;
 
     b.drive(va, vb, vc);
-    b.step(16800);
+    b.step(1680);
     cout << b << "\t" << *b.m << endl;
   }
 
