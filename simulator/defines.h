@@ -1,6 +1,20 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+#include <cmath>
+
+
+namespace simulator
+{
+
+template <typename T>
+constexpr inline T min(T a, T b) { return a < b ? a : b; }
+
+template <typename T>
+constexpr inline T max(T a, T b) { return a > b ? a : b; }
+
+}
+
 
 // real = double for PC simulations, but on the board we probably want floats
 #define real_mut double

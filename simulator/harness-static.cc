@@ -12,17 +12,13 @@ int main()
   m.rotor_position = 0.2;       // not evenly cogged; we want it to move
 
   // print header row
-  cout << "time\t"
-       << motor_header << "\t"
-       << endl;
+  cout << motor_header << endl;
 
   real dt = 100*NANO;
-  for (real_mut t = 0; t < 1;)
+  while (m.time < 1)
   {
-    cout << t << "\t"
-         << m << "\t"
-         << endl;
-    for (int i = 0; i < 100; ++i, t += dt) m.step(dt, 1, 0, 0);
+    cout << m << endl;
+    for (int i = 0; i < 100; ++i) m.step(dt, 1, 0, 0);
   }
 
   return 0;

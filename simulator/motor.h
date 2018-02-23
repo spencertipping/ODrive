@@ -1,11 +1,9 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include <cmath>
-#include <iostream>
-
-#include <stdint.h>
-#include <unistd.h>
+#ifdef IO
+# include <iostream>
+#endif
 
 #include "defines.h"
 
@@ -241,12 +239,12 @@ struct motor_load_sum : public motor_load
 
   motor_load_sum(motor_load &lhs_, motor_load &rhs_) : lhs(&lhs_), rhs(&rhs_) {}
 
-  virtual real torque(real dt, motor const &m) const
+  real torque(real dt, motor const &m) const
   {
     return lhs->torque(dt, m) + rhs->torque(dt, m);
   }
 
-  virtual void drive(real dt, real dposition, motor const &m)
+  void drive(real dt, real dposition, motor const &m)
   {
     lhs->drive(dt, dposition, m);
     rhs->drive(dt, dposition, m);
@@ -260,7 +258,7 @@ motor_load &motor_load::operator+(motor_load &rhs)
 // Time-variant motor state
 struct motor
 {
-  real_mut t               = 0;         // motor time
+  real_mut time            = 0;         // motor time
   real_mut rotor_position  = 0;         // absolute rotor turns
   real_mut rotor_velocity  = 0;         // turns/sec
   real_mut ialpha          = 0;         // A
@@ -289,86 +287,16 @@ struct motor
 
 
   // Time stepping
-  inline real di(
+  real di(            // NB: this function integrates current along one α/β axis
       real dt,
       real i,
       real v,
       real (motor_parameters:: *const emf_fn)        (real, real) const,
       real (motor_parameters:: *const inductance_fn) (real)       const,
       real (motor_parameters:: *const resistance_fn) (void)       const)
-  const
-  {
-    let dt2 = dt/2;
-    let p0  = phase_at(0);
-    let p12 = phase_at(dt2);
-    let p1  = phase_at(dt);
+  const;
 
-    // Integrate everything in α/β space.
-    let emf_t0  = (p->*emf_fn)(p0,  rotor_velocity);
-    let emf_t12 = (p->*emf_fn)(p12, rotor_velocity);
-    let emf_t1  = (p->*emf_fn)(p1,  rotor_velocity);
-
-    let l = (p->*inductance_fn)(p12);
-    let r = (p->*resistance_fn)();
-
-    // RK4 terms: k1, k2, k3, and k4
-    let didt_k1 = v - emf_t0  - i                   * r;
-    let didt_k2 = v - emf_t12 - (i + dt2 * didt_k1) * r;
-    let didt_k3 = v - emf_t12 - (i + dt2 * didt_k2) * r;
-    let didt_k4 = v - emf_t1  - (i + dt  * didt_k3) * r;
-
-    return 1/l * dt/6 * (didt_k1 + 2*didt_k2 + 2*didt_k3 + didt_k4);
-  }
-
-
-  void step(real dt, real va, real vb, real vc)
-  {
-    let vab = va - vb;
-    let vac = va - vc;
-
-    let alpha_di = di(dt, ialpha, p->alpha(-vab, -vac),
-                      &motor_parameters::alpha_emf,
-                      &motor_parameters::alpha_inductance,
-                      &motor_parameters::alpha_resistance);
-
-    let beta_di  = di(dt, ibeta, p->beta(-vab, -vac),
-                      &motor_parameters::beta_emf,
-                      &motor_parameters::beta_inductance,
-                      &motor_parameters::beta_resistance);
-
-    let mid_ialpha = ialpha + alpha_di/2;
-    let mid_ibeta  = ibeta  + beta_di/2;
-
-    // Net rotor torque
-    let friction_torque = p->friction_torque * sgn(rotor_velocity);
-    let windage_torque  = p->windage_loss    * rotor_velocity;
-    let magnetic_torque = p->magnetic_torque(phase_at(dt/2), mid_ialpha, mid_ibeta);
-    let load_torque     = l ? l->torque(dt, *this) * sgn(rotor_velocity) : 0;
-    let net_torque      = magnetic_torque
-                        - windage_torque - friction_torque - load_torque;
-
-    // Integrate into velocity and position
-    let acceleration = net_torque       // N·m/rad = (kg m²/rad)/s²
-                     * dt               // (kg m²/rad)/s
-                     / p->rotor_inertia // rad/s
-                     / TAU;             // turn/s
-
-    let dposition = dt * (rotor_velocity + acceleration/2);
-
-    // Update state
-    stator_losses   += p->stator_power(mid_ialpha, mid_ibeta) * dt;
-    friction_losses +=
-        fabs(windage_torque + friction_torque)         // N·m/rad
-      * fabs((rotor_velocity + acceleration/2) * TAU)  // N·m/s
-      * dt;                                            // J
-
-    if (l) l->drive(dt, dposition, *this);
-    t              += dt;
-    rotor_position += dposition;
-    rotor_velocity += acceleration;
-    ialpha         += alpha_di;
-    ibeta          += beta_di;
-  }
+  void step(real dt, real va, real vb, real vc);
 };
 
 
@@ -376,7 +304,7 @@ struct motor
 struct motor_friction_load : public motor_load
 {
   real f = 0;
-  virtual real torque(real dt, motor const &m) const { return f; }
+  real torque(real dt, motor const &m) const { return f; }
 };
 
 
@@ -385,15 +313,17 @@ struct motor_inertial_load : public motor_load
   real     angular_inertia = 0;                       // kg m²/radian²
   real_mut velocity        = 0;
 
-  virtual real torque(real dt, motor const &m) const
+  real torque(real dt, motor const &m) const
   {
     return (velocity - m.rotor_velocity) / dt * TAU   // radian/s²
          * angular_inertia;                           // N·m/radian
   }
 
-  virtual void drive(real dt, real dposition, motor const &m) { velocity = dposition / dt; }
+  void drive(real dt, real dposition, motor const &m) { velocity = dposition / dt; }
 };
 
+
+#ifdef IO
 
 // Debugging/logging
 class motor_header_t {};
@@ -406,6 +336,7 @@ std::ostream &operator<<(std::ostream &os, motor const &m);
 std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
 {
   return os << "name\t"
+            << "time\t"
             << "position\t"
             << "velocity\t"
             << "iα\t"
@@ -417,12 +348,98 @@ std::ostream &operator<<(std::ostream &os, motor_header_t const &h)
 std::ostream &operator<<(std::ostream &os, motor const &m)
 {
   return os << m.p->name         << "\t"
+            << m.time            << "\t"
             << m.rotor_position  << "\t"
             << m.rotor_velocity  << "\t"
             << m.ialpha          << "\t"
             << m.ibeta           << "\t"
             << m.stator_losses   << "\t"
             << m.friction_losses;
+}
+
+#endif      // ifdef IO
+
+
+// Motor implementation
+real motor::di(
+    real dt,
+    real i,
+    real v,
+    real (motor_parameters:: *const emf_fn)        (real, real) const,
+    real (motor_parameters:: *const inductance_fn) (real)       const,
+    real (motor_parameters:: *const resistance_fn) (void)       const)
+const
+{
+  let dt2 = dt/2;
+  let p0  = phase_at(0);
+  let p12 = phase_at(dt2);
+  let p1  = phase_at(dt);
+
+  // Integrate everything in α/β space.
+  let emf_t0  = (p->*emf_fn)(p0,  rotor_velocity);
+  let emf_t12 = (p->*emf_fn)(p12, rotor_velocity);
+  let emf_t1  = (p->*emf_fn)(p1,  rotor_velocity);
+
+  let l = (p->*inductance_fn)(p12);
+  let r = (p->*resistance_fn)();
+
+  // RK4 terms: k1, k2, k3, and k4
+  let didt_k1 = v - emf_t0  - i                   * r;
+  let didt_k2 = v - emf_t12 - (i + dt2 * didt_k1) * r;
+  let didt_k3 = v - emf_t12 - (i + dt2 * didt_k2) * r;
+  let didt_k4 = v - emf_t1  - (i + dt  * didt_k3) * r;
+
+  return 1/l * dt/6 * (didt_k1 + 2*didt_k2 + 2*didt_k3 + didt_k4);
+}
+
+
+void motor::step(real dt, real va, real vb, real vc)
+{
+  let vab = va - vb;
+  let vac = va - vc;
+
+  let alpha_di = di(dt, ialpha, p->alpha(-vab, -vac),
+                    &motor_parameters::alpha_emf,
+                    &motor_parameters::alpha_inductance,
+                    &motor_parameters::alpha_resistance);
+
+  let beta_di  = di(dt, ibeta, p->beta(-vab, -vac),
+                    &motor_parameters::beta_emf,
+                    &motor_parameters::beta_inductance,
+                    &motor_parameters::beta_resistance);
+
+  let mid_ialpha = ialpha + alpha_di/2;
+  let mid_ibeta  = ibeta  + beta_di/2;
+
+  // Net rotor torque
+  let friction_torque = p->friction_torque * sgn(rotor_velocity);
+  let windage_torque  = p->windage_loss    * rotor_velocity;
+  let magnetic_torque = p->magnetic_torque(phase_at(dt/2), mid_ialpha, mid_ibeta);
+  let load_torque     = l ? l->torque(dt, *this) * sgn(rotor_velocity) : 0;
+  let net_torque      = magnetic_torque
+                      - windage_torque - friction_torque - load_torque;
+
+  // Integrate into velocity and position
+  let acceleration = net_torque       // N·m/rad = (kg m²/rad)/s²
+                   * dt               // (kg m²/rad)/s
+                   / p->rotor_inertia // rad/s
+                   / TAU;             // turn/s
+
+  let dposition = dt * (rotor_velocity + acceleration/2);
+
+  // Update state
+  stator_losses   += p->stator_power(mid_ialpha, mid_ibeta) * dt;
+  friction_losses +=
+      fabs(windage_torque + friction_torque)         // N·m/rad
+    * fabs((rotor_velocity + acceleration/2) * TAU)  // N·m/s
+    * dt;                                            // J
+
+  if (l) l->drive(dt, dposition, *this);
+  time           += dt;
+  rotor_position += dposition;
+  rotor_velocity += acceleration;
+  ialpha         += alpha_di;
+  ibeta          += beta_di;
 }
 
 
